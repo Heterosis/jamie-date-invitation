@@ -20,6 +20,12 @@ describe("parseInvitationConfig", () => {
     });
   });
 
+  it("freezes the returned configuration at runtime", () => {
+    const config = parseInvitationConfig("");
+
+    expect(Object.isFrozen(config)).toBe(true);
+  });
+
   it("parses normalized valid values", () => {
     const query = "?to=Jamie&from=Alex&date=2026-08-08&time=19%3A30&tz=Asia%2FSingapore&duration=90&place=Botanic+Gardens&title=Picnic&note=Bring+a+smile&telegram=%40alex_date&notifyName=Alex&tgText=Jamie+says+yes&make=1";
     expect(parseInvitationConfig(query)).toEqual({
@@ -46,6 +52,13 @@ describe("parseInvitationConfig", () => {
     expect(config.tz).toBe("Asia/Singapore");
     expect(config.duration).toBe(120);
     expect(config.telegram).toBeNull();
+  });
+
+  it("enforces the inclusive duration boundaries", () => {
+    expect(parseInvitationConfig("?duration=14").duration).toBe(120);
+    expect(parseInvitationConfig("?duration=15").duration).toBe(15);
+    expect(parseInvitationConfig("?duration=720").duration).toBe(720);
+    expect(parseInvitationConfig("?duration=721").duration).toBe(120);
   });
 
   it("removes control characters and enforces text limits", () => {
