@@ -1,4 +1,4 @@
-export const TRICK_IDS = [
+export const TRICK_IDS = Object.freeze([
   "runaway-rsvp",
   "growing-feelings",
   "seat-swap",
@@ -9,7 +9,7 @@ export const TRICK_IDS = [
   "spotlight",
   "tiny-disguise",
   "return-to-sender",
-] as const;
+] as const);
 
 export type TrickId = (typeof TRICK_IDS)[number];
 
@@ -21,7 +21,11 @@ export function createTrickDeck(random: () => number = Math.random): TrickDeck {
   const refill = (): void => {
     bag = [...TRICK_IDS];
     for (let index = bag.length - 1; index > 0; index -= 1) {
-      const swapIndex = Math.floor(random() * (index + 1));
+      const sample = random();
+      if (!Number.isFinite(sample) || sample < 0 || sample >= 1) {
+        throw new RangeError("Random samples must be finite and between 0 (inclusive) and 1 (exclusive)");
+      }
+      const swapIndex = Math.floor(sample * (index + 1));
       [bag[index], bag[swapIndex]] = [bag[swapIndex]!, bag[index]!];
     }
     cursor = 0;

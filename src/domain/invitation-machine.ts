@@ -1,6 +1,12 @@
+type EarlyAttempt = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
+type AskingState =
+  | { readonly kind: "asking"; readonly attempts: EarlyAttempt; readonly canRefuse: false }
+  | { readonly kind: "asking"; readonly attempts: 8; readonly canRefuse: true };
+
 export type InvitationState =
   | { readonly kind: "sealed" }
-  | { readonly kind: "asking"; readonly attempts: number; readonly canRefuse: boolean }
+  | AskingState
   | { readonly kind: "celebrating" }
   | { readonly kind: "confirmingNo" }
   | { readonly kind: "declined" };
@@ -13,23 +19,32 @@ export type InvitationEvent =
   | { readonly type: "ACTUALLY_YES" }
   | { readonly type: "CONFIRM_NO" };
 
-export const initialInvitationState: InvitationState = Object.freeze({ kind: "sealed" });
+const NEXT_ATTEMPT = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+
+function freezeState<State extends InvitationState>(state: State): Readonly<State> {
+  return Object.freeze(state);
+}
+
+export const initialInvitationState: InvitationState = freezeState({ kind: "sealed" });
 
 export function transition(state: InvitationState, event: InvitationEvent): InvitationState {
   if (state.kind === "sealed" && event.type === "REVEAL") {
-    return { kind: "asking", attempts: 0, canRefuse: false };
+    return freezeState({ kind: "asking", attempts: 0, canRefuse: false });
   }
   if (state.kind === "asking") {
-    if (event.type === "YES") return { kind: "celebrating" };
-    if (event.type === "NO_ATTEMPT" && state.attempts < 8) {
-      const attempts = state.attempts + 1;
-      return { kind: "asking", attempts, canRefuse: attempts === 8 };
+    if (event.type === "YES") return freezeState({ kind: "celebrating" });
+    if (event.type === "NO_ATTEMPT" && state.canRefuse === false) {
+      const attempts = NEXT_ATTEMPT[state.attempts];
+      if (attempts === 8) return freezeState({ kind: "asking", attempts, canRefuse: true });
+      return freezeState({ kind: "asking", attempts, canRefuse: false });
     }
-    if (event.type === "REAL_NO" && state.canRefuse) return { kind: "confirmingNo" };
+    if (event.type === "REAL_NO" && state.attempts === 8 && state.canRefuse === true) {
+      return freezeState({ kind: "confirmingNo" });
+    }
   }
   if (state.kind === "confirmingNo") {
-    if (event.type === "ACTUALLY_YES") return { kind: "celebrating" };
-    if (event.type === "CONFIRM_NO") return { kind: "declined" };
+    if (event.type === "ACTUALLY_YES") return freezeState({ kind: "celebrating" });
+    if (event.type === "CONFIRM_NO") return freezeState({ kind: "declined" });
   }
   return state;
 }
