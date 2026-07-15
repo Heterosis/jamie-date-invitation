@@ -5,14 +5,19 @@ import "./styles/base.css";
 import "./styles/invitation.css";
 import "./styles/tricks.css";
 import "./styles/results.css";
+import "./styles/maker.css";
 
 import { parseInvitationConfig } from "./domain/invitation-config";
 import { wireInvitation } from "./ui/invitation-controller";
 import { mountInvitation } from "./ui/invitation-view";
+import { mountMaker } from "./ui/maker-view";
 
 const app = document.querySelector<HTMLElement>("#app");
 if (!app) throw new Error("Missing #app mount point");
 
 const config = parseInvitationConfig(location.search);
-const invitation = mountInvitation(app, config);
-wireInvitation(invitation, config);
+if (config.make) {
+  mountMaker(app, config);
+} else {
+  wireInvitation(mountInvitation(app, config), config);
+}
