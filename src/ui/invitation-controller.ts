@@ -16,6 +16,7 @@ export function wireInvitation(view: InvitationView, config: InvitationConfig): 
 
   const cleanupResultTricks = (): void => {
     view.stage.classList.remove("trick-growing", "trick-swapped", "trick-spotlight");
+    delete view.stage.dataset.lastTrick;
     view.stage.querySelectorAll(".yes-blossom").forEach((blossom) => blossom.remove());
   };
 
@@ -40,7 +41,7 @@ export function wireInvitation(view: InvitationView, config: InvitationConfig): 
     const telegram = buildTelegramAction(config, location.href);
     view.telegramLink.textContent = telegram.label;
     view.telegramLink.href = telegram.href;
-    window.setTimeout(() => view.calendarLink.focus(), 50);
+    window.setTimeout(() => view.successPanel.querySelector<HTMLElement>("h2")?.focus(), 50);
   };
 
   const chooseYes = (): void => {

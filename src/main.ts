@@ -11,6 +11,9 @@ import { parseInvitationConfig } from "./domain/invitation-config";
 import { wireInvitation } from "./ui/invitation-controller";
 import { mountInvitation } from "./ui/invitation-view";
 import { mountMaker } from "./ui/maker-view";
+import { installMotionPreference } from "./ui/motion";
+
+installMotionPreference();
 
 const app = document.querySelector<HTMLElement>("#app");
 if (!app) throw new Error("Missing #app mount point");

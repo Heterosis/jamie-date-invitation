@@ -47,7 +47,7 @@ export function mountInvitation(root: HTMLElement, config: InvitationConfig): In
         </section>
         <section class="result result--yes" data-success hidden>
           <div class="bouquet" aria-hidden="true">🌸 ♥ 🌷</div>
-          <h2>It's a date!</h2>
+          <h2 tabindex="-1">It's a date!</h2>
           <p>I'll be counting down the days.</p>
           <div class="result-actions">
             <a class="button button--yes" data-calendar target="_blank" rel="noopener noreferrer"></a>
@@ -55,14 +55,14 @@ export function mountInvitation(root: HTMLElement, config: InvitationConfig): In
           </div>
         </section>
         <section class="result result--declined" data-declined hidden>
-          <h2>No worries ♥</h2>
+          <h2 tabindex="-1">No worries ♥</h2>
           <p>Thank you for being honest. This little note will behave now.</p>
         </section>
         <span class="wax-seal" aria-hidden="true">♥</span>
       </article>
       <p class="doodle doodle--left" aria-hidden="true">psst… choose yes ↗</p>
       <p class="doodle doodle--right" aria-hidden="true">made with butterflies ✶</p>
-      <p class="sr-only" aria-live="polite" data-status></p>
+      <p class="sr-only" role="status" aria-live="polite" data-status></p>
     </section>
     <dialog class="no-dialog" data-no-dialog aria-labelledby="no-dialog-title">
       <form method="dialog">
