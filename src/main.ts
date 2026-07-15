@@ -4,6 +4,7 @@ import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/invitation.css";
 import "./styles/tricks.css";
+import "./styles/results.css";
 
 import { parseInvitationConfig } from "./domain/invitation-config";
 import { wireInvitation } from "./ui/invitation-controller";
