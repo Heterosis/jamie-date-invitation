@@ -1,11 +1,6 @@
 import { defineConfig } from "vite";
+import { githubPagesBase } from "./src/build/github-pages-base";
 
-export function githubPagesBase(
-  repository = process.env.GITHUB_REPOSITORY,
-  inActions = process.env.GITHUB_ACTIONS === "true",
-): string {
-  const name = repository?.split("/")[1];
-  return inActions && name ? `/${name}/` : "/";
-}
-
-export default defineConfig({ base: githubPagesBase() });
+export default defineConfig({
+  base: githubPagesBase(process.env.GITHUB_REPOSITORY, process.env.GITHUB_ACTIONS === "true"),
+});
