@@ -1,0 +1,5 @@
+:root { color: #562937; background: #f5e7d7; font-family: "Fraunces Variable", Georgia, serif; }
+* { box-sizing: border-box; }
+html, body { min-height: 100%; margin: 0; }
+body { display: grid; place-items: center; padding: 24px; }
+button, input, textarea, select { font: inherit; }
