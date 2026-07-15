@@ -14,7 +14,13 @@ export function wireInvitation(view: InvitationView, config: InvitationConfig): 
   let lastPointerAttemptAt = Number.NEGATIVE_INFINITY;
   let guardUntil = 0;
 
+  const cleanupResultTricks = (): void => {
+    view.stage.classList.remove("trick-growing", "trick-swapped", "trick-spotlight");
+    view.stage.querySelectorAll(".yes-blossom").forEach((blossom) => blossom.remove());
+  };
+
   const showSuccess = (): void => {
+    cleanupResultTricks();
     view.askingPanel.hidden = true;
     view.declinedPanel.hidden = true;
     view.successPanel.hidden = false;
@@ -86,6 +92,7 @@ export function wireInvitation(view: InvitationView, config: InvitationConfig): 
   const confirmNo = (): void => {
     state = transition(state, { type: "CONFIRM_NO" });
     if (state.kind !== "declined") return;
+    cleanupResultTricks();
     view.dialog.close();
     view.askingPanel.hidden = true;
     view.successPanel.hidden = true;
