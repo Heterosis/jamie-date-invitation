@@ -46,3 +46,35 @@ test("Actually, yes returns from confirmation to celebration", async ({ page }) 
   await page.getByRole("button", { name: "Actually, yes" }).click();
   await expect(page.getByRole("heading", { name: "It's a date!" })).toBeVisible();
 });
+
+test("reopens refusal confirmation after Escape and still accepts genuine refusal", async ({ page }) => {
+  await page.goto("/?to=Jamie&telegram=alex_date");
+  await unlockRealNo(page);
+  const genuineNo = page.getByRole("button", { name: "Okay, I'll behave…" });
+  const dialog = page.getByRole("dialog");
+  await genuineNo.click();
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(page.locator("[data-success]")).toBeHidden();
+  await genuineNo.click();
+  await expect(dialog).toBeVisible();
+  await page.getByRole("button", { name: "Yes, I really mean no" }).click();
+  await expect(page.getByRole("heading", { name: "No worries ♥" })).toBeVisible();
+});
+
+test("reopens refusal confirmation after Escape and still accepts Actually yes", async ({ page }) => {
+  await page.goto("/?to=Jamie&date=2026-08-08&time=19%3A30");
+  await unlockRealNo(page);
+  const genuineNo = page.getByRole("button", { name: "Okay, I'll behave…" });
+  const dialog = page.getByRole("dialog");
+  await genuineNo.click();
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(page.locator("[data-success]")).toBeHidden();
+  await genuineNo.click();
+  await expect(dialog).toBeVisible();
+  await page.getByRole("button", { name: "Actually, yes" }).click();
+  await expect(page.getByRole("heading", { name: "It's a date!" })).toBeVisible();
+});

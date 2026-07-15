@@ -47,6 +47,11 @@ export function wireInvitation(view: InvitationView, config: InvitationConfig): 
   };
 
   const attemptNo = (fromPointer = false): boolean => {
+    if (state.kind === "confirmingNo") {
+      if (fromPointer || view.dialog.open) return false;
+      view.dialog.showModal();
+      return true;
+    }
     if (state.kind !== "asking") return false;
     if (state.canRefuse) {
       if (fromPointer) return false;
