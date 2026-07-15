@@ -48,9 +48,11 @@ test("serves a complete invitation from the configured base URL", async ({ page 
     status: response.status(),
     url: response.url(),
   })));
+  const fonts = assets.filter(({ resourceType }) => resourceType === "font");
   const scripts = assets.filter(({ resourceType }) => resourceType === "script");
   const stylesheets = assets.filter(({ resourceType }) => resourceType === "stylesheet");
 
+  expect(fonts, "Browser did not receive a bundled font asset response").not.toHaveLength(0);
   expect(scripts, "Browser did not receive a JavaScript asset response").not.toHaveLength(0);
   expect(stylesheets, "Browser did not receive a stylesheet asset response").not.toHaveLength(0);
   for (const asset of assets) {
@@ -62,6 +64,9 @@ test("serves a complete invitation from the configured base URL", async ({ page 
   }
   for (const stylesheet of stylesheets) {
     expect(stylesheet.contentType, `${stylesheet.url} must return CSS`).toMatch(/^text\/css(?:;|$)/i);
+  }
+  for (const font of fonts) {
+    expect(font.contentType, `${font.url} must return a font`).toMatch(/^font\//i);
   }
   for (const script of scripts) {
     expect(script.contentType, `${script.url} must return JavaScript`).toMatch(
