@@ -66,4 +66,40 @@ describe("maker URL", () => {
       "That local date and time is ambiguous or does not exist in this time zone.",
     ]);
   });
+
+  it.each(["", "14", "721", "15.5"])(
+    "rejects an explicit invalid duration of %j",
+    (duration) => {
+      expect(validateMakerValues({ ...valid, duration })).toEqual([
+        "Choose a whole duration from 15 to 720 minutes.",
+      ]);
+    },
+  );
+
+  it.each(["15", "720"])(
+    "accepts the inclusive duration boundary %s",
+    (duration) => {
+      expect(validateMakerValues({ ...valid, duration })).toEqual([]);
+      expect(parseInvitationConfig(buildMakerUrl("https://example.test/", {
+        ...valid,
+        duration,
+      }).search).duration).toBe(Number(duration));
+    },
+  );
+
+  it("validates the same trimmed date, time, and time zone that it writes", () => {
+    const padded = {
+      ...valid,
+      date: " 2026-08-08 ",
+      time: " 19:30 ",
+      tz: " Asia/Singapore ",
+    };
+
+    expect(validateMakerValues(padded)).toEqual([]);
+    const url = buildMakerUrl("https://example.test/?make=1#maker", padded);
+    expect(url.searchParams.get("date")).toBe("2026-08-08");
+    expect(url.searchParams.get("time")).toBe("19:30");
+    expect(url.searchParams.get("tz")).toBe("Asia/Singapore");
+    expect(url.hash).toBe("");
+  });
 });

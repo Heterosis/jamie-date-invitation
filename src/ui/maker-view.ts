@@ -39,7 +39,7 @@ export function mountMaker(root: HTMLElement, config: InvitationConfig): void {
           <label>Date<input name="date" type="date" required /></label>
           <label>Time<input name="time" type="time" required /></label>
           <label>IANA zone<input name="tz" maxlength="64" /></label>
-          <label>Duration in minutes<input name="duration" type="number" min="15" max="720" step="15" /></label>
+          <label>Duration in minutes<input name="duration" type="number" min="15" max="720" step="1" /></label>
           <label class="wide">Place<input name="place" maxlength="100" /></label>
           <label class="wide">Calendar title<input name="title" maxlength="80" /></label>
           <label class="wide">Invitation note<textarea name="note" maxlength="240" rows="3"></textarea></label>
@@ -98,13 +98,21 @@ export function mountMaker(root: HTMLElement, config: InvitationConfig): void {
   form.addEventListener("submit", (event) => event.preventDefault());
   copy.addEventListener("click", async () => {
     if (copy.disabled) return;
+    let copied = false;
     try {
       await navigator.clipboard.writeText(generated.value);
+      copied = true;
     } catch {
       generated.select();
-      document.execCommand("copy");
+      try {
+        copied = document.execCommand("copy");
+      } catch {
+        copied = false;
+      }
     }
-    status.textContent = "Invitation link copied ♥";
+    status.textContent = copied
+      ? "Invitation link copied ♥"
+      : "Copy failed — select the link and copy it manually.";
   });
 
   if (typeof navigator.share === "function") {
@@ -114,7 +122,9 @@ export function mountMaker(root: HTMLElement, config: InvitationConfig): void {
       try {
         await navigator.share({ title: "A tiny invitation", url: generated.value });
       } catch (error) {
-        if (!(error instanceof DOMException && error.name === "AbortError")) throw error;
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          status.textContent = "Sharing failed — copy the invitation link instead.";
+        }
       }
     });
   }
