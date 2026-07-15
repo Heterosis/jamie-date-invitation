@@ -4,3 +4,8 @@ test("loads the invitation shell", async ({ page }) => {
   await page.goto("/?to=Jamie");
   await expect(page.getByRole("heading", { name: /Jamie, will you go on a date with me\?/i })).toBeVisible();
 });
+
+test("binds the query recipient to the heading", async ({ page }) => {
+  await page.goto("/?to=Taylor");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Taylor, will you go on a date with me?");
+});
