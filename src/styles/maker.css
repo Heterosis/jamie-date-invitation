@@ -59,6 +59,7 @@
 }
 
 .maker-form input,
+.maker-form select,
 .maker-form textarea {
   width: 100%;
   color: var(--ink);
@@ -67,6 +68,12 @@
   border-radius: 10px;
   padding: 11px 12px;
   font: 15px/1.4 var(--display);
+}
+
+.maker-form select {
+  min-height: 44px;
+  padding-right: 36px;
+  cursor: pointer;
 }
 
 .maker-status {

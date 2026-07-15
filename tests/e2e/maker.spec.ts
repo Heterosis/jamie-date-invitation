@@ -35,6 +35,61 @@ test("does not persist maker values in browser storage", async ({ page }) => {
   }))).toEqual({ local: 0, session: 0 });
 });
 
+test("offers a native IANA time-zone selector that updates the link and preview", async ({ page }) => {
+  await page.goto("/?make=1");
+  await fillSchedule(page);
+
+  const timeZone = page.getByLabel("IANA zone");
+  await expect(timeZone).toHaveJSProperty("tagName", "SELECT");
+  const options = await timeZone.locator("option").evaluateAll((elements) =>
+    elements.map((element) => (element as HTMLOptionElement).value),
+  );
+  expect(options.length).toBeGreaterThan(100);
+  expect(options).toEqual(expect.arrayContaining([
+    "Asia/Singapore",
+    "America/New_York",
+    "Europe/London",
+  ]));
+
+  const browserTimeZone = await page.evaluate(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Singapore",
+  );
+  await expect(timeZone).toHaveValue(browserTimeZone);
+
+  await timeZone.selectOption("America/New_York");
+  const generated = await page.getByLabel("Generated invitation URL").inputValue();
+  expect(new URL(generated).searchParams.get("tz")).toBe("America/New_York");
+  await expect(page.locator('iframe[title="Invitation preview"]')).toHaveAttribute("src", generated);
+  await expect.poll(() => {
+    const preview = page.frames().find((frame) => frame.parentFrame() === page.mainFrame());
+    return preview ? new URL(preview.url()).searchParams.get("tz") : null;
+  }).toBe("America/New_York");
+});
+
+test("keeps a substantial deterministic IANA fallback list", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(Intl, "supportedValuesOf", {
+      configurable: true,
+      value: undefined,
+    });
+  });
+  await page.goto("/?make=1&tz=Antarctica%2FTroll");
+
+  const timeZone = page.getByLabel("IANA zone");
+  await expect(timeZone).toHaveJSProperty("tagName", "SELECT");
+  const options = await timeZone.locator("option").evaluateAll((elements) =>
+    elements.map((element) => (element as HTMLOptionElement).value),
+  );
+  expect(options.length).toBeGreaterThanOrEqual(30);
+  expect(options).toEqual(expect.arrayContaining([
+    "Asia/Singapore",
+    "America/New_York",
+    "Europe/London",
+    "Pacific/Auckland",
+    "Antarctica/Troll",
+  ]));
+});
+
 test("copies the generated link only when the form is ready", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"], {
     origin: "http://127.0.0.1:4173",
@@ -66,7 +121,7 @@ test("normalizes blank duration and time zone before copying", async ({ page, co
   await expect(timeZone).toHaveValue(browserTimeZone);
 
   await duration.fill("");
-  await timeZone.fill("");
+  await timeZone.selectOption("");
   await expect(copy).toBeEnabled();
 
   const generatedBeforeBlur = await page.getByLabel("Generated invitation URL").inputValue();
@@ -114,7 +169,12 @@ test("rejects invalid durations and accepts integers inside the domain bounds", 
 test("rejects an explicit invalid nonempty time zone", async ({ page }) => {
   await page.goto("/?make=1");
   await fillSchedule(page);
-  await page.getByLabel("IANA zone").fill("Mars/Olympus");
+  await page.getByLabel("IANA zone").evaluate((element) => {
+    const select = element as HTMLSelectElement;
+    select.add(new Option("Mars/Olympus", "Mars/Olympus"));
+    select.value = "Mars/Olympus";
+    select.dispatchEvent(new Event("input", { bubbles: true }));
+  });
 
   await expect(page.getByText("Choose a valid IANA time zone.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy invitation link" })).toBeDisabled();
@@ -127,19 +187,34 @@ test.describe("browser time-zone default", () => {
     await page.goto("/?make=1");
     await page.getByLabel("Date").fill("2026-03-08");
     await page.getByLabel("Time").fill("02:30");
-    await page.getByLabel("IANA zone").fill("");
+    const timeZone = page.getByLabel("IANA zone");
+    await expect(timeZone).toHaveValue("America/New_York");
+    await timeZone.selectOption("");
 
     await expect(page.getByText(
       "That local date and time is ambiguous or does not exist in this time zone.",
     )).toBeVisible();
     await expect(page.getByRole("button", { name: "Copy invitation link" })).toBeDisabled();
+
+    const generated = await page.getByLabel("Generated invitation URL").inputValue();
+    expect(new URL(generated).searchParams.get("tz")).toBe("America/New_York");
+    await expect(page.locator('iframe[title="Invitation preview"]')).toHaveAttribute("src", generated);
+
+    await timeZone.focus();
+    await timeZone.blur();
+    await expect(timeZone).toHaveValue("America/New_York");
   });
 });
 
 test("normalizes surrounding time-zone whitespace for the URL and preview", async ({ page }) => {
   await page.goto("/?make=1");
   await fillSchedule(page);
-  await page.getByLabel("IANA zone").fill(" Asia/Singapore ");
+  await page.getByLabel("IANA zone").evaluate((element) => {
+    const select = element as HTMLSelectElement;
+    select.add(new Option("Asia/Singapore with spaces", " Asia/Singapore "));
+    select.value = " Asia/Singapore ";
+    select.dispatchEvent(new Event("input", { bubbles: true }));
+  });
   await expect(page.getByText("Ready to send ♥")).toBeVisible();
 
   const generated = new URL(await page.getByLabel("Generated invitation URL").inputValue());

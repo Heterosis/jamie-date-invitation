@@ -6,10 +6,80 @@ import {
   type MakerValues,
 } from "../maker/maker-url";
 
-function input(root: ParentNode, name: keyof MakerValues): HTMLInputElement | HTMLTextAreaElement {
-  const element = root.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[name="${name}"]`);
+type MakerField = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+
+const FALLBACK_IANA_TIME_ZONES = Object.freeze([
+  "UTC",
+  "Africa/Cairo",
+  "Africa/Johannesburg",
+  "America/Anchorage",
+  "America/Argentina/Buenos_Aires",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Mexico_City",
+  "America/New_York",
+  "America/Sao_Paulo",
+  "America/Toronto",
+  "America/Vancouver",
+  "Asia/Bangkok",
+  "Asia/Dubai",
+  "Asia/Hong_Kong",
+  "Asia/Jakarta",
+  "Asia/Kolkata",
+  "Asia/Seoul",
+  "Asia/Shanghai",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+  "Australia/Adelaide",
+  "Australia/Brisbane",
+  "Australia/Melbourne",
+  "Australia/Perth",
+  "Australia/Sydney",
+  "Europe/Amsterdam",
+  "Europe/Berlin",
+  "Europe/London",
+  "Europe/Madrid",
+  "Europe/Paris",
+  "Europe/Rome",
+  "Pacific/Auckland",
+  "Pacific/Honolulu",
+]);
+
+function input(root: ParentNode, name: keyof MakerValues): MakerField {
+  const element = root.querySelector<MakerField>(`[name="${name}"]`);
   if (!element) throw new Error(`Missing maker field: ${name}`);
   return element;
+}
+
+function timeZoneOptions(browserTimeZone: string, configTimeZone: string): string[] {
+  const timeZones = new Set<string>(FALLBACK_IANA_TIME_ZONES);
+  try {
+    for (const timeZone of Intl.supportedValuesOf?.("timeZone") ?? []) timeZones.add(timeZone);
+  } catch {
+    // Keep the deterministic fallbacks when this API is absent or unavailable.
+  }
+  timeZones.add(browserTimeZone);
+  timeZones.add(configTimeZone);
+  return [...timeZones].filter(Boolean).sort();
+}
+
+function populateTimeZoneOptions(
+  select: HTMLSelectElement,
+  browserTimeZone: string,
+  configTimeZone: string,
+): void {
+  const browserDefault = document.createElement("option");
+  browserDefault.value = "";
+  browserDefault.textContent = `Browser default (${browserTimeZone})`;
+  select.append(browserDefault);
+
+  for (const timeZone of timeZoneOptions(browserTimeZone, configTimeZone)) {
+    const option = document.createElement("option");
+    option.value = timeZone;
+    option.textContent = timeZone;
+    select.append(option);
+  }
 }
 
 function readValues(root: ParentNode): MakerValues {
@@ -43,7 +113,7 @@ export function mountMaker(root: HTMLElement, config: InvitationConfig): void {
           <label>From<input name="from" maxlength="40" /></label>
           <label>Date<input name="date" type="date" required /></label>
           <label>Time<input name="time" type="time" required /></label>
-          <label>IANA zone<input name="tz" maxlength="64" /></label>
+          <label>IANA zone<select name="tz"></select></label>
           <label>Duration in minutes<input name="duration" type="number" min="15" max="720" step="1" /></label>
           <label class="wide">Place<input name="place" maxlength="100" /></label>
           <label class="wide">Calendar title<input name="title" maxlength="80" /></label>
@@ -80,11 +150,14 @@ export function mountMaker(root: HTMLElement, config: InvitationConfig): void {
     // Keep the deterministic fallback when the browser cannot report a zone.
   }
 
+  const timeZone = input(form, "tz") as HTMLSelectElement;
+  populateTimeZoneOptions(timeZone, browserTimeZone, config.tz);
+
   input(form, "to").value = config.to;
   input(form, "from").value = config.from;
   input(form, "date").value = config.date ?? "";
   input(form, "time").value = config.time ?? "";
-  input(form, "tz").value = browserTimeZone;
+  timeZone.value = browserTimeZone;
   input(form, "duration").value = String(config.duration);
   input(form, "place").value = config.place;
   input(form, "title").value = new URLSearchParams(location.search).has("title") ? config.title : "";
@@ -115,7 +188,7 @@ export function mountMaker(root: HTMLElement, config: InvitationConfig): void {
   form.addEventListener("input", refresh);
   form.addEventListener("focusout", (event) => {
     const target = event.target;
-    if (!(target instanceof HTMLInputElement)) return;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) return;
     if ((target.name === "tz" || target.name === "duration") && !target.value.trim()) {
       materializeDefaults();
     }
