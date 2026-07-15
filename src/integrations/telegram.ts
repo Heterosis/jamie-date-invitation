@@ -1,24 +1,24 @@
 import type { InvitationConfig } from "../domain/invitation-config";
-import { displayDate, displayTime } from "../domain/date-time";
+import { createEventWindow, displayDate, displayTime } from "../domain/date-time";
 
 export interface TelegramAction {
   readonly label: string;
   readonly href: string;
 }
 
-function generatedDraft(config: InvitationConfig, invitationUrl: string): string {
+function generatedDraft(config: InvitationConfig): string {
   const lines = [`${config.to} says YES! 💌 It's a date.`];
-  if (config.date && config.time) lines.push(`${displayDate(config)} at ${displayTime(config)}`);
+  if (createEventWindow(config).ok) lines.push(`${displayDate(config)} at ${displayTime(config)}`);
   if (config.place) lines.push(`📍 ${config.place}`);
-  lines.push(invitationUrl);
   return lines.join("\n");
 }
 
 export function buildTelegramAction(config: InvitationConfig, invitationUrl: string): TelegramAction {
-  const draft = config.tgText ?? generatedDraft(config, invitationUrl);
+  const isGeneratedDraft = config.tgText === null;
+  const draft = config.tgText ?? generatedDraft(config);
   if (config.telegram) {
     const url = new URL(`https://t.me/${config.telegram}`);
-    url.searchParams.set("text", draft);
+    url.searchParams.set("text", isGeneratedDraft ? `${draft}\n${invitationUrl}` : draft);
     return { label: `TELL ${config.notifyName.toLocaleUpperCase("en-US")} ON TELEGRAM`, href: url.toString() };
   }
 
