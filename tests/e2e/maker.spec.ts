@@ -50,6 +50,38 @@ test("copies the generated link only when the form is ready", async ({ page, con
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(generated);
 });
 
+test("normalizes blank duration and time zone before copying", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: "http://127.0.0.1:4173",
+  });
+  await page.goto("/?make=1");
+  await fillSchedule(page);
+
+  const browserTimeZone = await page.evaluate(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Singapore",
+  );
+  const duration = page.getByLabel("Duration in minutes");
+  const timeZone = page.getByLabel("IANA zone");
+  const copy = page.getByRole("button", { name: "Copy invitation link" });
+  await expect(timeZone).toHaveValue(browserTimeZone);
+
+  await duration.fill("");
+  await timeZone.fill("");
+  await expect(copy).toBeEnabled();
+
+  const generatedBeforeBlur = await page.getByLabel("Generated invitation URL").inputValue();
+  const generatedUrl = new URL(generatedBeforeBlur);
+  expect(generatedUrl.searchParams.get("duration")).toBe("120");
+  expect(generatedUrl.searchParams.get("tz")).toBe(browserTimeZone);
+  await expect(page.locator('iframe[title="Invitation preview"]'))
+    .toHaveAttribute("src", generatedBeforeBlur);
+
+  await copy.click();
+  await expect(duration).toHaveValue("120");
+  await expect(timeZone).toHaveValue(browserTimeZone);
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(generatedBeforeBlur);
+});
+
 test("rejects invalid durations and accepts integers inside the domain bounds", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "share", {
@@ -65,7 +97,7 @@ test("rejects invalid durations and accepts integers inside the domain bounds", 
   const share = page.getByRole("button", { name: "Share link" });
   await expect(duration).toHaveAttribute("step", "1");
 
-  for (const invalid of ["", "14", "721", "15.5"]) {
+  for (const invalid of ["14", "721", "15.5"]) {
     await duration.fill(invalid);
     await expect(page.getByText("Choose a whole duration from 15 to 720 minutes.")).toBeVisible();
     await expect(copy).toBeDisabled();
@@ -77,6 +109,31 @@ test("rejects invalid durations and accepts integers inside the domain bounds", 
     await expect(copy).toBeEnabled();
     await expect(share).toBeEnabled();
   }
+});
+
+test("rejects an explicit invalid nonempty time zone", async ({ page }) => {
+  await page.goto("/?make=1");
+  await fillSchedule(page);
+  await page.getByLabel("IANA zone").fill("Mars/Olympus");
+
+  await expect(page.getByText("Choose a valid IANA time zone.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Copy invitation link" })).toBeDisabled();
+});
+
+test.describe("browser time-zone default", () => {
+  test.use({ timezoneId: "America/New_York" });
+
+  test("validates DST gaps after the blank zone resolves to the browser zone", async ({ page }) => {
+    await page.goto("/?make=1");
+    await page.getByLabel("Date").fill("2026-03-08");
+    await page.getByLabel("Time").fill("02:30");
+    await page.getByLabel("IANA zone").fill("");
+
+    await expect(page.getByText(
+      "That local date and time is ambiguous or does not exist in this time zone.",
+    )).toBeVisible();
+    await expect(page.getByRole("button", { name: "Copy invitation link" })).toBeDisabled();
+  });
 });
 
 test("normalizes surrounding time-zone whitespace for the URL and preview", async ({ page }) => {

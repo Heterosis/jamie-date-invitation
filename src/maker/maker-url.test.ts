@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { parseInvitationConfig } from "../domain/invitation-config";
-import { buildMakerUrl, validateMakerValues, type MakerValues } from "./maker-url";
+import {
+  buildMakerUrl,
+  normalizeMakerDefaults,
+  validateMakerValues,
+  type MakerValues,
+} from "./maker-url";
 
 const valid: MakerValues = {
   to: "Jamie",
@@ -67,7 +72,47 @@ describe("maker URL", () => {
     ]);
   });
 
-  it.each(["", "14", "721", "15.5"])(
+  it("normalizes blank optional schedule fields to documented defaults", () => {
+    expect(validateMakerValues({ ...valid, tz: "", duration: "" })).toEqual([]);
+
+    const normalized = normalizeMakerDefaults({
+      ...valid,
+      tz: "",
+      duration: "",
+    });
+
+    expect(normalized.tz).toBe("Asia/Singapore");
+    expect(normalized.duration).toBe("120");
+    expect(validateMakerValues(normalized)).toEqual([]);
+    expect(parseInvitationConfig(buildMakerUrl("https://example.test/", normalized).search))
+      .toMatchObject({ tz: "Asia/Singapore", duration: 120 });
+  });
+
+  it("uses the maker browser zone when optional schedule fields are blank", () => {
+    const normalized = normalizeMakerDefaults({
+      ...valid,
+      tz: "",
+      duration: "",
+    }, "America/New_York");
+
+    expect(normalized.tz).toBe("America/New_York");
+    expect(normalized.duration).toBe("120");
+  });
+
+  it("validates DST gaps in the normalized maker browser zone", () => {
+    const normalized = normalizeMakerDefaults({
+      ...valid,
+      date: "2026-03-08",
+      time: "02:30",
+      tz: "",
+    }, "America/New_York");
+
+    expect(validateMakerValues(normalized)).toEqual([
+      "That local date and time is ambiguous or does not exist in this time zone.",
+    ]);
+  });
+
+  it.each(["14", "721", "15.5"])(
     "rejects an explicit invalid duration of %j",
     (duration) => {
       expect(validateMakerValues({ ...valid, duration })).toEqual([
@@ -75,6 +120,12 @@ describe("maker URL", () => {
       ]);
     },
   );
+
+  it("rejects an explicit invalid nonempty time zone", () => {
+    expect(validateMakerValues({ ...valid, tz: "Mars/Olympus" })).toEqual([
+      "Choose a valid IANA time zone.",
+    ]);
+  });
 
   it.each(["15", "720"])(
     "accepts the inclusive duration boundary %s",

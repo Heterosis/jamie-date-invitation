@@ -31,6 +31,21 @@ const FIELD_NAMES = [
   "tgText",
 ] as const;
 
+const DEFAULT_MAKER_TIME_ZONE = "Asia/Singapore";
+const DEFAULT_MAKER_DURATION = "120";
+
+export function normalizeMakerDefaults(
+  values: MakerValues,
+  browserTimeZone?: string,
+): MakerValues {
+  const fallbackTimeZone = browserTimeZone?.trim() || DEFAULT_MAKER_TIME_ZONE;
+  return Object.freeze({
+    ...values,
+    tz: values.tz.trim() || fallbackTimeZone,
+    duration: values.duration.trim() || DEFAULT_MAKER_DURATION,
+  });
+}
+
 export function buildMakerUrl(base: string, values: MakerValues): URL {
   const url = new URL(base);
   url.search = "";
@@ -43,10 +58,11 @@ export function buildMakerUrl(base: string, values: MakerValues): URL {
 }
 
 export function validateMakerValues(values: MakerValues): string[] {
-  const date = values.date.trim();
-  const time = values.time.trim();
-  const timeZone = values.tz.trim();
-  const durationText = values.duration.trim();
+  const normalized = normalizeMakerDefaults(values);
+  const date = normalized.date.trim();
+  const time = normalized.time.trim();
+  const timeZone = normalized.tz;
+  const durationText = normalized.duration;
   const duration = Number(durationText);
   const errors: string[] = [];
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) errors.push("Choose a valid date.");
@@ -56,7 +72,7 @@ export function validateMakerValues(values: MakerValues): string[] {
   }
   if (errors.length) return errors;
 
-  const url = buildMakerUrl("https://validation.invalid/", values);
+  const url = buildMakerUrl("https://validation.invalid/", normalized);
   const config = parseInvitationConfig(url.search);
   if (config.date !== date) return ["Choose a valid date."];
   if (config.time !== time) return ["Choose a valid time."];

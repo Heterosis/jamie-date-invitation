@@ -1,5 +1,10 @@
 import type { InvitationConfig } from "../domain/invitation-config";
-import { buildMakerUrl, validateMakerValues, type MakerValues } from "../maker/maker-url";
+import {
+  buildMakerUrl,
+  normalizeMakerDefaults,
+  validateMakerValues,
+  type MakerValues,
+} from "../maker/maker-url";
 
 function input(root: ParentNode, name: keyof MakerValues): HTMLInputElement | HTMLTextAreaElement {
   const element = root.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[name="${name}"]`);
@@ -68,7 +73,12 @@ export function mountMaker(root: HTMLElement, config: InvitationConfig): void {
   const copy = root.querySelector<HTMLButtonElement>("[data-copy]")!;
   const share = root.querySelector<HTMLButtonElement>("[data-share]")!;
   const reset = root.querySelector<HTMLButtonElement>("[data-reset]")!;
-  const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || config.tz;
+  let browserTimeZone = "Asia/Singapore";
+  try {
+    browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || browserTimeZone;
+  } catch {
+    // Keep the deterministic fallback when the browser cannot report a zone.
+  }
 
   input(form, "to").value = config.to;
   input(form, "from").value = config.from;
@@ -84,7 +94,7 @@ export function mountMaker(root: HTMLElement, config: InvitationConfig): void {
   input(form, "tgText").value = config.tgText ?? "";
 
   const refresh = (): void => {
-    const values = readValues(form);
+    const values = normalizeMakerDefaults(readValues(form), browserTimeZone);
     const url = buildMakerUrl(location.href, values);
     const errors = validateMakerValues(values);
     generated.value = url.toString();
@@ -94,10 +104,26 @@ export function mountMaker(root: HTMLElement, config: InvitationConfig): void {
     status.textContent = errors.length ? errors.join(" ") : "Ready to send ♥";
   };
 
+  const materializeDefaults = (): void => {
+    const rawValues = readValues(form);
+    const normalized = normalizeMakerDefaults(rawValues, browserTimeZone);
+    if (!rawValues.tz.trim()) input(form, "tz").value = normalized.tz;
+    if (!rawValues.duration.trim()) input(form, "duration").value = normalized.duration;
+    refresh();
+  };
+
   form.addEventListener("input", refresh);
+  form.addEventListener("focusout", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if ((target.name === "tz" || target.name === "duration") && !target.value.trim()) {
+      materializeDefaults();
+    }
+  });
   form.addEventListener("submit", (event) => event.preventDefault());
   copy.addEventListener("click", async () => {
     if (copy.disabled) return;
+    materializeDefaults();
     let copied = false;
     try {
       await navigator.clipboard.writeText(generated.value);
@@ -119,6 +145,7 @@ export function mountMaker(root: HTMLElement, config: InvitationConfig): void {
     share.hidden = false;
     share.addEventListener("click", async () => {
       if (share.disabled) return;
+      materializeDefaults();
       try {
         await navigator.share({ title: "A tiny invitation", url: generated.value });
       } catch (error) {
