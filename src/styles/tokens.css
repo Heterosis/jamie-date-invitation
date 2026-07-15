@@ -1,0 +1,14 @@
+:root {
+  --paper: #fffaf2;
+  --desk: #f5e7d7;
+  --burgundy: #ae3550;
+  --burgundy-dark: #762438;
+  --ink: #562937;
+  --rose: #d9a0a8;
+  --sage: #a7b8a7;
+  --muted: #805b62;
+  --line: #d8baa7;
+  --shadow: rgba(100, 54, 57, 0.14);
+  --display: "Fraunces Variable", Georgia, serif;
+  --hand: "Schoolbell", "Segoe Print", cursive;
+}
