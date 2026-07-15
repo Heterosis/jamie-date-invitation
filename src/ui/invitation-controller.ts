@@ -9,7 +9,7 @@ export interface InvitationController { getState(): InvitationState; }
 export function wireInvitation(view: InvitationView, _config: InvitationConfig): InvitationController {
   const deck = createTrickDeck();
   let state = transition(initialInvitationState, { type: "REVEAL" });
-  let lastPointerAttemptAt = 0;
+  let lastPointerAttemptAt = Number.NEGATIVE_INFINITY;
   let guardUntil = 0;
 
   const attemptNo = (fromPointer = false): boolean => {

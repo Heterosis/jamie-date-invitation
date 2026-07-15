@@ -1,5 +1,7 @@
 .desk .button--yes { transform: scale(var(--yes-scale, 1)); }
 .desk .button--no { transform: scale(var(--no-scale, 1)); }
+.desk .button--yes:hover { transform: translateY(-2px) scale(var(--yes-scale, 1)); }
+.desk .button--no:hover { transform: translateY(-2px) scale(var(--no-scale, 1)); }
 .desk.trick-growing .button--yes, .desk.trick-growing .button--no { transition: transform .45s cubic-bezier(.2,.8,.2,1); }
 .desk.trick-swapped .button--yes { order: 2; }
 .desk.trick-swapped .button--no { order: 1; }

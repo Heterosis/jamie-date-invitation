@@ -11,16 +11,27 @@ export interface TrickContext {
 
 type TrickEffect = (context: TrickContext) => void;
 
-function replay(element: HTMLElement, className: string): void {
+const temporaryLabelVersions = new WeakMap<HTMLButtonElement, object>();
+
+function replay(element: HTMLElement, className: string, animationName: string): void {
   element.classList.remove(className);
   void element.offsetWidth;
   element.classList.add(className);
-  element.addEventListener("animationend", () => element.classList.remove(className), { once: true });
+  const removeCompletedAnimation = (event: AnimationEvent): void => {
+    if (event.animationName !== animationName) return;
+    element.classList.remove(className);
+    element.removeEventListener("animationend", removeCompletedAnimation);
+  };
+  element.addEventListener("animationend", removeCompletedAnimation);
 }
 
 function temporaryLabel(button: HTMLButtonElement, label: string): void {
+  const version = {};
+  temporaryLabelVersions.set(button, version);
   button.textContent = label;
   window.setTimeout(() => {
+    if (temporaryLabelVersions.get(button) !== version) return;
+    temporaryLabelVersions.delete(button);
     if (button.dataset.locked !== "true") button.textContent = "NO, SORRY";
   }, 950);
 }
@@ -29,7 +40,7 @@ export const TRICK_EFFECTS: Record<TrickId, TrickEffect> = {
   "runaway-rsvp": (context) => {
     context.noButton.style.setProperty("--run-x", `${context.attempt % 2 ? 92 : -92}px`);
     context.noButton.style.setProperty("--run-y", `${context.attempt % 3 ? -42 : 48}px`);
-    replay(context.noButton, "trick-runaway");
+    replay(context.noButton, "trick-runaway", "runaway");
     context.status.textContent = "The NO button made a tiny escape.";
   },
   "growing-feelings": (context) => {
@@ -43,11 +54,11 @@ export const TRICK_EFFECTS: Record<TrickId, TrickEffect> = {
     context.status.textContent = "The buttons swapped seats before accepting another click.";
   },
   "cupid-magnet": (context) => {
-    replay(context.noButton, "trick-magnet");
+    replay(context.noButton, "trick-magnet", "magnet");
     context.status.textContent = "Cupid's magnet pulled NO toward YES.";
   },
   "paper-plane": (context) => {
-    replay(context.noButton, "trick-plane");
+    replay(context.noButton, "trick-plane", "paper-plane");
     context.status.textContent = "NO folded itself into a paper plane.";
   },
   "yes-garden": (context) => {
@@ -68,16 +79,16 @@ export const TRICK_EFFECTS: Record<TrickId, TrickEffect> = {
     context.status.textContent = "NO would like to renegotiate over dessert.";
   },
   spotlight: (context) => {
-    replay(context.stage, "trick-spotlight");
+    replay(context.stage, "trick-spotlight", "spotlight");
     context.status.textContent = "A spotlight found the YES button.";
   },
   "tiny-disguise": (context) => {
     temporaryLabel(context.noButton, "🥸 DEFINITELY YES");
-    replay(context.noButton, "trick-disguise");
+    replay(context.noButton, "trick-disguise", "disguise");
     context.status.textContent = "NO put on a very unconvincing disguise.";
   },
   "return-to-sender": (context) => {
-    replay(context.noButton, "trick-returned");
+    replay(context.noButton, "trick-returned", "returned");
     context.status.textContent = "NO was stamped RETURN TO SENDER.";
   },
 };
