@@ -20,6 +20,14 @@
   justify-content: center;
 }
 
+.desk.trick-swapped [data-yes-seat] {
+  order: 2;
+}
+
+.desk.trick-swapped [data-no-seat] {
+  order: 1;
+}
+
 .desk .choice-button {
   min-width: 44px;
   min-height: 48px;

@@ -148,6 +148,28 @@ test("uses stable semantic buttons inside dedicated visual layers", async ({ pag
   expect(result.noHeight).toBeGreaterThanOrEqual(44);
   expect(await page.locator("[data-stage]").getByRole("status").count()).toBe(0);
 
+  const swappedSeats = await page.locator("[data-stage]").evaluate((stage) => {
+    stage.classList.add("trick-swapped");
+    const yesSeat = stage.querySelector<HTMLElement>("[data-yes-seat]")!;
+    const noSeat = stage.querySelector<HTMLElement>("[data-no-seat]")!;
+    const yesRect = yesSeat.getBoundingClientRect();
+    const noRect = noSeat.getBoundingClientRect();
+    const result = {
+      yesOrder: getComputedStyle(yesSeat).order,
+      noOrder: getComputedStyle(noSeat).order,
+      sameRow: Math.abs(yesRect.top - noRect.top) < Math.min(yesRect.height, noRect.height) / 2,
+      yesCenterX: yesRect.left + yesRect.width / 2,
+      noCenterX: noRect.left + noRect.width / 2,
+    };
+    stage.classList.remove("trick-swapped");
+    return result;
+  });
+
+  expect.soft(swappedSeats.yesOrder).toBe("2");
+  expect.soft(swappedSeats.noOrder).toBe("1");
+  expect.soft(swappedSeats.sameRow).toBe(true);
+  expect.soft(swappedSeats.noCenterX).toBeLessThan(swappedSeats.yesCenterX);
+
   const no = page.locator("[data-no]");
   for (let index = 0; index < 8; index += 1) await no.dispatchEvent("click");
 
