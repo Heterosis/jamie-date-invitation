@@ -79,6 +79,14 @@ export const TRICK_EFFECTS: Record<TrickId, TrickEffect> = {
     context.status.textContent = "NO would like to renegotiate over dessert.";
   },
   spotlight: (context) => {
+    context.letter.style.setProperty(
+      "--spotlight-x",
+      `${context.yesButton.offsetLeft + context.yesButton.offsetWidth / 2}px`,
+    );
+    context.letter.style.setProperty(
+      "--spotlight-y",
+      `${context.yesButton.offsetTop + context.yesButton.offsetHeight / 2}px`,
+    );
     replay(context.stage, "trick-spotlight", "spotlight");
     context.status.textContent = "A spotlight found the YES button.";
   },

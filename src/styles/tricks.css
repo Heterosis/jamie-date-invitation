@@ -10,7 +10,7 @@
 .desk .trick-plane { animation: paper-plane 1s cubic-bezier(.3,.1,.2,1); }
 .desk .trick-disguise { animation: disguise .9s ease-in-out; }
 .desk .trick-returned { animation: returned .9s ease-in-out; }
-.desk.trick-spotlight .letter::after { content: ""; position: absolute; inset: 0; z-index: 4; pointer-events: none; background: radial-gradient(circle 120px at 38% 82%, transparent 0 70%, rgba(42,22,31,.65) 72%); animation: spotlight .9s ease both; }
+.desk.trick-spotlight .letter::after { content: ""; position: absolute; inset: 0; z-index: 4; pointer-events: none; background: radial-gradient(circle 120px at var(--spotlight-x, 38%) var(--spotlight-y, 82%), transparent 0 70%, rgba(42,22,31,.65) 72%); animation: spotlight .9s ease both; }
 .desk.trick-spotlight .button--yes { position: relative; z-index: 5; }
 .desk .yes-blossom { position: absolute; z-index: 5; left: 50%; top: 72%; color: var(--burgundy); font: 14px var(--hand); transform: rotate(var(--angle)) translateX(145px); animation: blossom .7s cubic-bezier(.2,.9,.2,1) both; pointer-events: none; }
 @keyframes runaway { 45%, 100% { transform: translate(var(--run-x), var(--run-y)) scale(var(--no-scale, 1)); } }
