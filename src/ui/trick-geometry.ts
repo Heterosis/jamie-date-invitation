@@ -197,13 +197,12 @@ export function chooseSafeNoPose(
     }
   }
 
-  if (isSafeNoRect(snapshot, snapshot.currentNo)) {
-    return {
-      centerX: current.x,
-      centerY: current.y,
-      rotation: query.currentRotation,
-    };
-  }
+  const fallbackPose: NoPose = {
+    centerX: current.x,
+    centerY: current.y,
+    rotation: query.currentRotation,
+  };
+  if (isSafeNoRect(snapshot, poseRect(fallbackPose, snapshot.noHitSize))) return fallbackPose;
   return null;
 }
 
@@ -386,16 +385,21 @@ export function createTrickVisualController(
   }
 
   function measure(): Measurement {
-    const letterBox = rectFromDom(elements.letter.getBoundingClientRect());
-    const yesSeatBox = rectFromDom(elements.yesSeat.getBoundingClientRect());
-    const yesButtonBox = rectFromDom(elements.yesButton.getBoundingClientRect());
-    const yesFaceBox = rectFromDom(elements.yesFace.getBoundingClientRect());
-    const noSeatBox = rectFromDom(elements.noSeat.getBoundingClientRect());
-    const noButtonBox = rectFromDom(elements.noButton.getBoundingClientRect());
-    const noFaceBox = rectFromDom(elements.noFace.getBoundingClientRect());
-    const protectedBoxes = Array.from(elements.letter.querySelectorAll(PROTECTED_SELECTOR), (element) => (
-      rectFromDom(element.getBoundingClientRect())
-    ));
+    const letterViewportBox = rectFromDom(elements.letter.getBoundingClientRect());
+    const readLocalBox = (element: Element): Rect => localRect(
+      rectFromDom(element.getBoundingClientRect()),
+      letterViewportBox,
+    );
+    const yesSeatBox = readLocalBox(elements.yesSeat);
+    const yesButtonBox = readLocalBox(elements.yesButton);
+    const yesFaceBox = readLocalBox(elements.yesFace);
+    const noSeatBox = readLocalBox(elements.noSeat);
+    const noButtonBox = readLocalBox(elements.noButton);
+    const noFaceBox = readLocalBox(elements.noFace);
+    const protectedBoxes = Array.from(
+      elements.letter.querySelectorAll(PROTECTED_SELECTOR),
+      readLocalBox,
+    );
     const computed = getComputedStyle(elements.letter);
     const borderLeft = borderWidth(computed.borderLeftWidth);
     const borderRight = borderWidth(computed.borderRightWidth);
@@ -410,20 +414,20 @@ export function createTrickVisualController(
         letterPaddingBox: rect(
           borderLeft,
           borderTop,
-          letterBox.width - borderLeft - borderRight,
-          letterBox.height - borderTop - borderBottom,
+          letterViewportBox.width - borderLeft - borderRight,
+          letterViewportBox.height - borderTop - borderBottom,
         ),
         viewport: {
-          left: -letterBox.left,
-          right: window.innerWidth - letterBox.left,
+          left: -letterViewportBox.left,
+          right: window.innerWidth - letterViewportBox.left,
         },
-        currentNo: localRect(noVisual, letterBox),
+        currentNo: noVisual,
         noHitSize: {
           width: elements.noButton.offsetWidth,
           height: elements.noButton.offsetHeight,
         },
-        yes: localRect(yesProtected, letterBox),
-        protectedRects: protectedBoxes.map((value) => localRect(value, letterBox)),
+        yes: yesProtected,
+        protectedRects: protectedBoxes,
       },
       yesVisual: asDomRect(yesVisual),
       noVisual: asDomRect(noVisual),

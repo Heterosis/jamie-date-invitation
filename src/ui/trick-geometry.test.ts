@@ -144,7 +144,7 @@ describe("chooseSafeNoPose", () => {
     expect(chooseSafeNoPose(snapshot, query)?.rotation).toBeGreaterThanOrEqual(-7);
   });
 
-  it("returns the current rotation when every alternate misses but the origin stays safe", () => {
+  it("rejects a rotated origin whose visual bounds exceed an exact 44px boundary", () => {
     const snapshot = safeSnapshot({
       letterPaddingBox: rect(0, 0, 60, 62),
       viewport: { left: 0, right: 60 },
@@ -156,7 +156,31 @@ describe("chooseSafeNoPose", () => {
       intent: "runaway",
       attempt: 0,
       currentRotation: 3,
-    })).toEqual({ centerX: 30, centerY: 32, rotation: 3 });
+    })).toBeNull();
+  });
+
+  it("preserves a current pose when its rotated visual bounds are safe and alternates are blocked", () => {
+    const blockedCenters = [
+      [101.44, 510.52],
+      [498.56, 510.52],
+      [300, 533.8],
+      [154, 440.68],
+      [446, 440.68],
+      [78.08, 347.56],
+      [521.92, 347.56],
+      [300, 475.6],
+    ] as const;
+    const snapshot = safeSnapshot({
+      currentNo: rect(278, 178, 44, 44),
+      yes: rect(100, 100, 44, 44),
+      protectedRects: blockedCenters.map(([x, y]) => rect(x - 1, y - 1, 2, 2)),
+    });
+
+    expect(chooseSafeNoPose(snapshot, {
+      intent: "runaway",
+      attempt: 0,
+      currentRotation: 3,
+    })).toEqual({ centerX: 300, centerY: 200, rotation: 3 });
   });
 });
 
@@ -419,6 +443,44 @@ afterEach(() => {
 });
 
 describe("createTrickVisualController", () => {
+  it("returns composed preview rectangles in letter-local coordinates", () => {
+    const harness = createHarness();
+
+    const preview = harness.controller.preview({
+      yesScale: 1.1,
+      noPose: { centerX: 500, centerY: 400, rotation: 0 },
+    });
+
+    expect(preview.beforeYes).toMatchObject({
+      left: 220,
+      top: 478,
+      right: 300,
+      bottom: 522,
+      width: 80,
+      height: 44,
+    });
+    expect(preview.beforeNo).toMatchObject({
+      left: 316,
+      top: 478,
+      right: 404,
+      bottom: 522,
+      width: 88,
+      height: 44,
+    });
+    expect(preview.afterYes.left).toBeCloseTo(216);
+    expect(preview.afterYes.top).toBeCloseTo(475.8);
+    expect(preview.afterYes.right).toBeCloseTo(304);
+    expect(preview.afterYes.bottom).toBeCloseTo(524.2);
+    expect(preview.afterNo).toMatchObject({
+      left: 456,
+      top: 378,
+      right: 544,
+      bottom: 422,
+      width: 88,
+      height: 44,
+    });
+  });
+
   it("replaces a committed pose with a later requested pose and keeps render layers separate", () => {
     const harness = createHarness();
     const first = harness.controller.preview({
@@ -530,6 +592,7 @@ describe("createTrickVisualController", () => {
     const disguised = harness.controller.preview({
       noPose: { centerX: 363.5, centerY: 500, rotation: 0 },
       yesScale: 1.1,
+      noScale: 0.82,
       swapped: false,
       disguised: true,
     });
@@ -538,9 +601,14 @@ describe("createTrickVisualController", () => {
     harness.controller.setRefusalReady(true);
 
     expect(harness.controller.state.yesScale).toBe(1.1);
+    expect(harness.controller.state.noScale).toBe(0.82);
     expect(harness.controller.state.swapped).toBe(false);
+    expect(harness.controller.state.disguised).toBe(true);
     expect(harness.controller.state.noPose).not.toEqual(disguised.target.noPose);
     expect(harness.noLabel.textContent).toBe("Okay, I'll behave…");
+    expect(harness.noCostume.textContent).toBe("🥸");
+    expect((harness.elements.noButton as unknown as ElementStub).getAttribute("aria-label"))
+      .toBe("NO refusal option: Okay, I'll behave…");
   });
 
   it("stages without committing, revalidates changed geometry, and resets all persistent render state", () => {
