@@ -87,6 +87,7 @@ class FakeElement extends EventTarget {
   append(...elements: FakeElement[]): void {
     for (const element of elements) {
       element.parent = this;
+      element.removed = false;
       this.children.push(element);
     }
   }
@@ -722,6 +723,119 @@ describe("createTrickRunner", () => {
       outcome: "completed",
     });
     expect(observed).toHaveBeenCalledTimes(1);
+    expectSettled(fixture.elements);
+  });
+
+  it("cleans reused animation and artifact ownership once in every run", async () => {
+    const completion = deferred<void>();
+    const animation = fakeAnimation(completion.promise);
+    const artifact = new FakeElement();
+    let fixture!: ReturnType<typeof setupRunner>;
+    fixture = setupRunner({
+      animation,
+      artifactCount: 0,
+      effect: (context) => {
+        const preview = context.preview({ yesScale: 1.2 });
+        context.animate(
+          fixture.animationTarget as unknown as Element,
+          [{ opacity: 0 }, { opacity: 1 }],
+          { duration: 120 },
+        );
+        (context.view.letter as unknown as FakeElement).append(artifact);
+        context.trackArtifact(artifact as unknown as HTMLElement);
+        return {
+          message: "Reusable resources landed.",
+          preview,
+          fallbackMs: 900,
+          persistence: "commit-target",
+        };
+      },
+    });
+
+    const first = fixture.runner.start("growing-feelings", 1, { x: 1, y: 1 });
+    first.cancel();
+    expect(await first.finished).toEqual({
+      id: "growing-feelings",
+      outcome: "cancelled",
+    });
+    expect(animation.cancel).toHaveBeenCalledTimes(1);
+    expect(artifact.remove).toHaveBeenCalledTimes(1);
+    expectSettled(fixture.elements);
+
+    fixture.animationTarget.animationQueue.push(animation);
+    const second = fixture.runner.start("growing-feelings", 2, { x: 2, y: 2 });
+    second.cancel();
+    expect(await second.finished).toEqual({
+      id: "growing-feelings",
+      outcome: "cancelled",
+    });
+    expect(animation.cancel).toHaveBeenCalledTimes(2);
+    expect(artifact.remove).toHaveBeenCalledTimes(2);
+    expect(artifact.removed).toBe(true);
+    expectSettled(fixture.elements);
+  });
+
+  it("reset removes a marked artifact that was removed and reinserted", async () => {
+    const artifact = new FakeElement();
+    const fixture = setupRunner({
+      artifactCount: 0,
+      effect: (context) => {
+        (context.view.letter as unknown as FakeElement).append(artifact);
+        context.trackArtifact(artifact as unknown as HTMLElement);
+        return {
+          message: "Artifact tracked.",
+          preview: context.preview({}),
+          fallbackMs: 900,
+          persistence: "transient",
+        };
+      },
+    });
+
+    const run = fixture.runner.start("yes-garden", 1, { x: 1, y: 1 });
+    run.cancel();
+    expect(await run.finished).toEqual({ id: "yes-garden", outcome: "cancelled" });
+    expect(artifact.remove).toHaveBeenCalledTimes(1);
+
+    fixture.elements.stage.append(artifact);
+    expect(artifact.removed).toBe(false);
+    fixture.runner.reset();
+
+    expect(artifact.remove).toHaveBeenCalledTimes(2);
+    expect(artifact.removed).toBe(true);
+    expectSettled(fixture.elements);
+  });
+
+  it("owns an artifact before a throwing marker write", async () => {
+    const artifact = new FakeElement();
+    Object.defineProperty(artifact, "dataset", {
+      value: new Proxy<Record<string, string>>({}, {
+        set(): never {
+          throw new Error("marker write failed");
+        },
+      }),
+    });
+    const fixture = setupRunner({
+      artifactCount: 0,
+      effect: (context) => {
+        (context.view.letter as unknown as FakeElement).append(artifact);
+        context.trackArtifact(artifact as unknown as HTMLElement);
+        return {
+          message: "unreachable",
+          preview: context.preview({ yesScale: 1.3 }),
+          fallbackMs: 900,
+          persistence: "commit-target",
+        };
+      },
+    });
+    const previous = fixture.runner.visualState;
+
+    const run = fixture.runner.start("yes-garden", 1, { x: 1, y: 1 });
+
+    expect(await run.finished).toEqual({ id: "yes-garden", outcome: "fallback" });
+    expect(artifact.remove).toHaveBeenCalledTimes(1);
+    expect(fixture.runner.visualState).toBe(previous);
+    expect(fixture.visuals.commit).toHaveBeenCalledWith(previous);
+    expect(fixture.elements.status.textContent).toBe("The tiny trick landed safely.");
     expectSettled(fixture.elements);
   });
 

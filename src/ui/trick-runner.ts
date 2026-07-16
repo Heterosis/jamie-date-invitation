@@ -78,8 +78,10 @@ interface ActiveRun {
   message: string;
   readonly animations: Animation[];
   readonly animationSet: Set<Animation>;
+  readonly cancelledAnimations: Set<Animation>;
   readonly artifacts: HTMLElement[];
   readonly artifactSet: Set<HTMLElement>;
+  readonly removedArtifacts: Set<HTMLElement>;
   deadline: ReturnType<typeof globalThis.setTimeout> | null;
   readonly resolve: (result: TrickRunResult) => void;
   readonly finished: Promise<TrickRunResult>;
@@ -140,21 +142,19 @@ export function createTrickRunner(
   let tokenSeed = 0;
   let queuedFrame: number | null = null;
   let disposed = false;
-  const cancelledAnimations = new Set<Animation>();
-  const removedArtifacts = new Set<HTMLElement>();
 
-  function cancelAnimation(animation: Animation): void {
+  function cancelAnimation(record: ActiveRun, animation: Animation): void {
     safe(() => {
       void animation.finished.catch(() => undefined);
     });
-    if (cancelledAnimations.has(animation)) return;
-    cancelledAnimations.add(animation);
+    if (record.cancelledAnimations.has(animation)) return;
+    record.cancelledAnimations.add(animation);
     safe(() => animation.cancel());
   }
 
-  function removeArtifact(artifact: HTMLElement): void {
-    if (removedArtifacts.has(artifact)) return;
-    removedArtifacts.add(artifact);
+  function removeArtifact(record: ActiveRun, artifact: HTMLElement): void {
+    if (record.removedArtifacts.has(artifact)) return;
+    record.removedArtifacts.add(artifact);
     safe(() => artifact.remove());
   }
 
@@ -184,8 +184,8 @@ export function createTrickRunner(
         record.deadline = null;
         safe(() => clearsTimeout(deadline));
       }
-      for (const animation of record.animations) cancelAnimation(animation);
-      for (const artifact of record.artifacts) removeArtifact(artifact);
+      for (const animation of record.animations) cancelAnimation(record, animation);
+      for (const artifact of record.artifacts) removeArtifact(record, artifact);
 
       setIdle();
       safe(() => {
@@ -212,7 +212,7 @@ export function createTrickRunner(
           .forEach((artifact) => artifacts.add(artifact));
       });
     }
-    artifacts.forEach(removeArtifact);
+    artifacts.forEach((artifact) => safe(() => artifact.remove()));
   }
 
   const queueRevalidation = (): void => {
@@ -275,8 +275,10 @@ export function createTrickRunner(
         message: "The tiny trick landed safely.",
         animations: [],
         animationSet: new Set(),
+        cancelledAnimations: new Set(),
         artifacts: [],
         artifactSet: new Set(),
+        removedArtifacts: new Set(),
         deadline: null,
         resolve,
         finished,
@@ -327,11 +329,11 @@ export function createTrickRunner(
             return animation;
           },
           trackArtifact<ElementType extends HTMLElement>(element: ElementType): ElementType {
-            element.dataset.trickArtifact = "true";
             if (!record.artifactSet.has(element)) {
               record.artifactSet.add(element);
               record.artifacts.push(element);
             }
+            element.dataset.trickArtifact = "true";
             return element;
           },
         };
