@@ -84,7 +84,8 @@ export function wireInvitation(view: InvitationView, config: InvitationConfig): 
     });
     if (state.canRefuse) {
       view.noButton.dataset.locked = "true";
-      view.noButton.textContent = "Okay, I'll behave…";
+      view.noLabel.textContent = "Okay, I'll behave…";
+      view.noButton.setAttribute("aria-label", "Okay, I'll behave…");
       view.status.textContent = "A real refusal option is now available.";
     }
     return true;

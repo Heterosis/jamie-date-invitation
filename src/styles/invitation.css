@@ -13,6 +13,28 @@
 .desk .date-ticket dd { margin: 0; font-size: 14px; line-height: 1.3; }
 .desk .signature { margin: 0 0 26px; color: var(--muted); font: 17px var(--hand); }
 .desk .actions, .desk .result-actions { display: flex; justify-content: center; align-items: center; gap: 12px; flex-wrap: wrap; }
+.desk .choice-seat,
+.desk .choice-motion {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.desk .choice-button {
+  min-width: 44px;
+  min-height: 48px;
+}
+
+.desk .choice-face {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.desk .choice-costume:empty {
+  display: none;
+}
 .desk .button, .no-dialog .button { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; padding: 13px 22px; border-radius: 999px; border: 0; cursor: pointer; text-decoration: none; font-weight: 750; letter-spacing: .04em; transition: transform .2s ease, box-shadow .2s ease; }
 .desk .button:hover, .no-dialog .button:hover { transform: translateY(-2px); }
 .desk .button--yes, .no-dialog .button--yes { color: #fff; background: var(--burgundy); box-shadow: 0 5px 0 var(--burgundy-dark); }

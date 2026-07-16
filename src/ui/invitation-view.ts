@@ -5,6 +5,15 @@ export interface InvitationView {
   readonly stage: HTMLElement;
   readonly letter: HTMLElement;
   readonly askingPanel: HTMLElement;
+  readonly actions: HTMLElement;
+  readonly yesSeat: HTMLElement;
+  readonly noSeat: HTMLElement;
+  readonly yesMotion: HTMLElement;
+  readonly noMotion: HTMLElement;
+  readonly yesFace: HTMLElement;
+  readonly noFace: HTMLElement;
+  readonly noLabel: HTMLElement;
+  readonly noCostume: HTMLElement;
   readonly yesButton: HTMLButtonElement;
   readonly noButton: HTMLButtonElement;
   readonly successPanel: HTMLElement;
@@ -40,9 +49,24 @@ export function mountInvitation(root: HTMLElement, config: InvitationConfig): In
             <div><dt>Place</dt><dd data-place></dd></div>
           </dl>
           <p class="signature" data-signature></p>
-          <div class="actions">
-            <button class="button button--yes" type="button" data-yes>YES, I'D LOVE TO</button>
-            <button class="button button--no" type="button" data-no>NO, SORRY</button>
+          <div class="actions" data-actions>
+            <span class="choice-seat" data-yes-seat>
+              <span class="choice-motion" data-yes-motion>
+                <button class="button button--yes choice-button" type="button" data-yes aria-label="YES, I'D LOVE TO">
+                  <span class="choice-face" data-yes-face>YES, I'D LOVE TO</span>
+                </button>
+              </span>
+            </span>
+            <span class="choice-seat" data-no-seat>
+              <span class="choice-motion" data-no-motion>
+                <button class="button button--no choice-button" type="button" data-no aria-label="NO, SORRY">
+                  <span class="choice-face" data-no-face>
+                    <span class="choice-costume" data-no-costume aria-hidden="true"></span>
+                    <span data-no-label>NO, SORRY</span>
+                  </span>
+                </button>
+              </span>
+            </span>
           </div>
         </section>
         <section class="result result--yes" data-success hidden>
@@ -62,8 +86,8 @@ export function mountInvitation(root: HTMLElement, config: InvitationConfig): In
       </article>
       <p class="doodle doodle--left" aria-hidden="true">psst… choose yes ↗</p>
       <p class="doodle doodle--right" aria-hidden="true">made with butterflies ✶</p>
-      <p class="sr-only" role="status" aria-live="polite" data-status></p>
     </section>
+    <p class="sr-only" role="status" aria-live="polite" data-status></p>
     <dialog class="no-dialog" data-no-dialog aria-labelledby="no-dialog-title">
       <form method="dialog">
         <span aria-hidden="true">🎭</span>
@@ -85,6 +109,15 @@ export function mountInvitation(root: HTMLElement, config: InvitationConfig): In
     stage: required(root, "[data-stage]"),
     letter: required(root, "[data-letter]"),
     askingPanel: required(root, "[data-asking]"),
+    actions: required(root, "[data-actions]"),
+    yesSeat: required(root, "[data-yes-seat]"),
+    noSeat: required(root, "[data-no-seat]"),
+    yesMotion: required(root, "[data-yes-motion]"),
+    noMotion: required(root, "[data-no-motion]"),
+    yesFace: required(root, "[data-yes-face]"),
+    noFace: required(root, "[data-no-face]"),
+    noLabel: required(root, "[data-no-label]"),
+    noCostume: required(root, "[data-no-costume]"),
     yesButton: required(root, "[data-yes]"),
     noButton: required(root, "[data-no]"),
     successPanel: required(root, "[data-success]"),

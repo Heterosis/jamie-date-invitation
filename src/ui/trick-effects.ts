@@ -13,6 +13,10 @@ type TrickEffect = (context: TrickContext) => void;
 
 const temporaryLabelVersions = new WeakMap<HTMLButtonElement, object>();
 
+function legacyLabelTarget(button: HTMLButtonElement): HTMLElement {
+  return button.querySelector?.<HTMLElement>("[data-no-label]") ?? button;
+}
+
 function replay(element: HTMLElement, className: string, animationName: string): void {
   element.classList.remove(className);
   void element.offsetWidth;
@@ -28,11 +32,11 @@ function replay(element: HTMLElement, className: string, animationName: string):
 function temporaryLabel(button: HTMLButtonElement, label: string): void {
   const version = {};
   temporaryLabelVersions.set(button, version);
-  button.textContent = label;
+  legacyLabelTarget(button).textContent = label;
   window.setTimeout(() => {
     if (temporaryLabelVersions.get(button) !== version) return;
     temporaryLabelVersions.delete(button);
-    if (button.dataset.locked !== "true") button.textContent = "NO, SORRY";
+    if (button.dataset.locked !== "true") legacyLabelTarget(button).textContent = "NO, SORRY";
   }, 950);
 }
 

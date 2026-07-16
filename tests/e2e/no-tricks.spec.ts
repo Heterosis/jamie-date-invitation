@@ -116,3 +116,64 @@ test("keeps the spotlight centered on YES after the buttons swap seats", async (
   expect(focus.yesDistance).toBeLessThan(focus.noDistance);
   expect(focus.yesDistance).toBeLessThan(30);
 });
+
+test("uses stable semantic buttons inside dedicated visual layers", async ({ page }) => {
+  await page.addInitScript(() => { Math.random = () => 0; });
+  await page.goto("/?to=Jamie");
+
+  const result = await page.locator("[data-actions]").evaluate((actions) => {
+    const yes = actions.querySelector<HTMLButtonElement>("[data-yes]")!;
+    const no = actions.querySelector<HTMLButtonElement>("[data-no]")!;
+    Reflect.set(actions, "__stableChoiceNodes", [yes, no]);
+    const noRect = no.getBoundingClientRect();
+    return {
+      yesLayers: Boolean(
+        yes.closest("[data-yes-motion]")?.closest("[data-yes-seat]")
+        && yes.querySelector("[data-yes-face]"),
+      ),
+      noLayers: Boolean(
+        no.closest("[data-no-motion]")?.closest("[data-no-seat]")
+        && no.querySelector("[data-no-face]")
+        && no.querySelector("[data-no-label]")
+        && no.querySelector("[data-no-costume]"),
+      ),
+      noWidth: noRect.width,
+      noHeight: noRect.height,
+    };
+  });
+
+  expect(result.yesLayers).toBe(true);
+  expect(result.noLayers).toBe(true);
+  expect(result.noWidth).toBeGreaterThanOrEqual(44);
+  expect(result.noHeight).toBeGreaterThanOrEqual(44);
+  expect(await page.locator("[data-stage]").getByRole("status").count()).toBe(0);
+
+  const no = page.locator("[data-no]");
+  for (let index = 0; index < 8; index += 1) await no.dispatchEvent("click");
+
+  const afterTricks = await page.locator("[data-actions]").evaluate((actions) => {
+    const yes = actions.querySelector<HTMLButtonElement>("[data-yes]")!;
+    const noButton = actions.querySelector<HTMLButtonElement>("[data-no]")!;
+    const originalNodes = Reflect.get(actions, "__stableChoiceNodes") as Element[];
+    return {
+      sameYesButton: yes === originalNodes[0],
+      sameNoButton: noButton === originalNodes[1],
+      yesLayers: Boolean(
+        yes.closest("[data-yes-motion]")?.closest("[data-yes-seat]")
+        && yes.querySelector("[data-yes-face]"),
+      ),
+      noLayers: Boolean(
+        noButton.closest("[data-no-motion]")?.closest("[data-no-seat]")
+        && noButton.querySelector("[data-no-face]")
+        && noButton.querySelector("[data-no-label]")
+        && noButton.querySelector("[data-no-costume]"),
+      ),
+    };
+  });
+
+  expect(afterTricks.sameYesButton).toBe(true);
+  expect(afterTricks.sameNoButton).toBe(true);
+  expect(afterTricks.yesLayers).toBe(true);
+  expect(afterTricks.noLayers).toBe(true);
+  await expect(page.getByRole("button", { name: "Okay, I'll behave…" })).toBeVisible();
+});
