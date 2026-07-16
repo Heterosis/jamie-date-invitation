@@ -312,6 +312,25 @@ interface ValidatedTarget {
   readonly measurement: Measurement;
 }
 
+interface SafetyProbeResult {
+  readonly measurement: Measurement;
+  readonly validated: ValidatedTarget | null;
+}
+
+interface RenderSnapshot {
+  readonly yesScale: string;
+  readonly noScale: string;
+  readonly noPoseX: string;
+  readonly noPoseY: string;
+  readonly noRotation: string;
+  readonly swapped: string | null;
+  readonly disguised: string | null;
+  readonly noLabel: string | null;
+  readonly noCostume: string | null;
+  readonly noCostumeHidden: HTMLElement["hidden"];
+  readonly noAriaLabel: string | null;
+}
+
 function isSafeYesRect(snapshot: GeometrySnapshot): boolean {
   const boundary = insetLetterBoundary(snapshot);
   const candidate = snapshot.yes;
@@ -337,8 +356,11 @@ export function createTrickVisualController(
   let committed: Readonly<TrickVisualState> = INITIAL_TRICK_VISUAL_STATE;
   let refusalReady = false;
 
-  function renderCopy(state: Readonly<TrickVisualState>): void {
-    elements.noLabel.textContent = refusalReady
+  function renderCopy(
+    state: Readonly<TrickVisualState>,
+    ready = refusalReady,
+  ): void {
+    elements.noLabel.textContent = ready
       ? REFUSAL_NO_LABEL
       : state.disguised ? DISGUISED_NO_LABEL : NORMAL_NO_LABEL;
     elements.noCostume.textContent = state.disguised ? "🥸" : "";
@@ -349,7 +371,7 @@ export function createTrickVisualController(
     } else {
       elements.noButton.setAttribute(
         "aria-label",
-        refusalReady ? REFUSAL_ARIA_LABEL : DISGUISED_ARIA_LABEL,
+        ready ? REFUSAL_ARIA_LABEL : DISGUISED_ARIA_LABEL,
       );
     }
   }
@@ -360,12 +382,15 @@ export function createTrickVisualController(
     elements.noSeat.style.removeProperty("--no-rotation");
   }
 
-  function render(state: Readonly<TrickVisualState>): void {
+  function render(
+    state: Readonly<TrickVisualState>,
+    ready = refusalReady,
+  ): void {
     elements.yesFace.style.setProperty("--yes-scale", String(state.yesScale));
     elements.noFace.style.setProperty("--no-scale", String(state.noScale));
     elements.stage.toggleAttribute("data-swapped", state.swapped);
     elements.stage.toggleAttribute("data-disguised", state.disguised);
-    renderCopy(state);
+    renderCopy(state, ready);
     clearPoseProperties();
 
     if (state.noPose) {
@@ -434,54 +459,106 @@ export function createTrickVisualController(
     };
   }
 
-  function renderAndMeasureIfSafe(
-    state: Readonly<TrickVisualState>,
-  ): ValidatedTarget | null {
-    render(state);
-    const measurement = measure();
-    return isSafeMeasurement(measurement)
-      ? { state, measurement }
-      : null;
+  function probeKey(state: Readonly<TrickVisualState>): string {
+    const pose = state.noPose;
+    return [
+      state.yesScale,
+      state.noScale,
+      state.swapped,
+      state.disguised,
+      pose?.centerX ?? "none",
+      pose?.centerY ?? "none",
+      pose?.rotation ?? "none",
+    ].join("|");
+  }
+
+  function createSafetyProbe(
+    ready: boolean,
+    seeds: readonly ValidatedTarget[] = [],
+  ): (state: Readonly<TrickVisualState>) => SafetyProbeResult {
+    const cache = new Map<string, SafetyProbeResult>();
+    seeds.forEach((seed) => {
+      cache.set(probeKey(seed.state), {
+        measurement: seed.measurement,
+        validated: isSafeMeasurement(seed.measurement) ? seed : null,
+      });
+    });
+
+    return (state) => {
+      const key = probeKey(state);
+      const cached = cache.get(key);
+      if (cached) return cached;
+
+      render(state, ready);
+      const measurement = measure();
+      const result: SafetyProbeResult = {
+        measurement,
+        validated: isSafeMeasurement(measurement) ? { state, measurement } : null,
+      };
+      cache.set(key, result);
+      return result;
+    };
   }
 
   function clampYesTowardSafe(
     state: Readonly<TrickVisualState>,
+    probe: (state: Readonly<TrickVisualState>) => SafetyProbeResult,
   ): ValidatedTarget | null {
-    let scale = state.yesScale;
-    while (true) {
-      const candidate = scale === state.yesScale
-        ? state
-        : applyTrickVisualPatch(state, { yesScale: scale });
-      const validated = renderAndMeasureIfSafe(candidate);
-      if (validated) return validated;
-      if (scale <= 1) return null;
-      scale = Math.max(1, Number((scale - 0.01).toFixed(10)));
+    const lower = state.yesScale === 1
+      ? state
+      : applyTrickVisualPatch(state, { yesScale: 1 });
+    let best = probe(lower).validated;
+    if (!best || state.yesScale === 1) return best;
+
+    const requested = probe(state).validated;
+    if (requested) return requested;
+
+    let safeHundredths = 100;
+    let unsafeHundredths = Math.ceil(
+      Number((state.yesScale * 100).toFixed(10)),
+    );
+    while (unsafeHundredths - safeHundredths > 1) {
+      const scaleHundredths = Math.floor(
+        (safeHundredths + unsafeHundredths) / 2,
+      );
+      const candidate = applyTrickVisualPatch(state, {
+        yesScale: scaleHundredths / 100,
+      });
+      const validated = probe(candidate).validated;
+      if (validated) {
+        safeHundredths = scaleHundredths;
+        best = validated;
+      } else {
+        unsafeHundredths = scaleHundredths;
+      }
     }
+    return best;
   }
 
   function validate(
     requested: Readonly<TrickVisualState>,
     fallback: ValidatedTarget,
+    ready: boolean,
   ): ValidatedTarget {
+    const probe = createSafetyProbe(ready, [fallback]);
     let candidate = requested;
-    let validated = clampYesTowardSafe(candidate);
+    let validated = clampYesTowardSafe(candidate, probe);
     if (validated) return validated;
 
     if (candidate.noPose) {
       candidate = applyTrickVisualPatch(candidate, { noPose: null });
-      validated = clampYesTowardSafe(candidate);
+      validated = clampYesTowardSafe(candidate, probe);
       if (validated) return validated;
     }
 
     if (candidate.swapped) {
       candidate = applyTrickVisualPatch(candidate, { swapped: false });
-      validated = clampYesTowardSafe(candidate);
+      validated = clampYesTowardSafe(candidate, probe);
       if (validated) return validated;
     }
 
     candidate = applyTrickVisualPatch(candidate, { yesScale: 1 });
-    render(candidate);
-    const originMeasurement = measure();
+    const originMeasurement = probe(candidate).measurement;
     const rebasedPose = chooseSafeNoPose(originMeasurement.snapshot, {
       intent: "returned",
       attempt: 0,
@@ -489,7 +566,7 @@ export function createTrickVisualController(
     });
     if (rebasedPose) {
       const rebased = applyTrickVisualPatch(candidate, { noPose: rebasedPose });
-      validated = renderAndMeasureIfSafe(rebased);
+      validated = probe(rebased).validated;
       if (validated) return validated;
     }
 
@@ -500,20 +577,22 @@ export function createTrickVisualController(
 
   function validateCopyReflow(
     requested: Readonly<TrickVisualState>,
+    fallback: ValidatedTarget,
+    ready: boolean,
   ): ValidatedTarget {
-    let validated = renderAndMeasureIfSafe(requested);
+    const probe = createSafetyProbe(ready, [fallback]);
+    let validated = probe(requested).validated;
     if (validated) return validated;
 
     const unposed = requested.noPose
       ? applyTrickVisualPatch(requested, { noPose: null })
       : requested;
     if (unposed !== requested) {
-      validated = renderAndMeasureIfSafe(unposed);
+      validated = probe(unposed).validated;
       if (validated) return validated;
     }
 
-    render(unposed);
-    const measurement = measure();
+    const measurement = probe(unposed).measurement;
     const rebasedPose = chooseSafeNoPose(measurement.snapshot, {
       intent: "returned",
       attempt: 0,
@@ -521,7 +600,7 @@ export function createTrickVisualController(
     });
     if (rebasedPose) {
       const rebased = applyTrickVisualPatch(unposed, { noPose: rebasedPose });
-      validated = renderAndMeasureIfSafe(rebased);
+      validated = probe(rebased).validated;
       if (validated) return validated;
     }
 
@@ -539,6 +618,54 @@ export function createTrickVisualController(
     elements.yesFace,
     elements.noFace,
   ] as const;
+
+  function captureRenderSnapshot(): RenderSnapshot {
+    return {
+      yesScale: elements.yesFace.style.getPropertyValue("--yes-scale"),
+      noScale: elements.noFace.style.getPropertyValue("--no-scale"),
+      noPoseX: elements.noSeat.style.getPropertyValue("--no-pose-x"),
+      noPoseY: elements.noSeat.style.getPropertyValue("--no-pose-y"),
+      noRotation: elements.noSeat.style.getPropertyValue("--no-rotation"),
+      swapped: elements.stage.getAttribute("data-swapped"),
+      disguised: elements.stage.getAttribute("data-disguised"),
+      noLabel: elements.noLabel.textContent,
+      noCostume: elements.noCostume.textContent,
+      noCostumeHidden: elements.noCostume.hidden,
+      noAriaLabel: elements.noButton.getAttribute("aria-label"),
+    };
+  }
+
+  function restoreStyleProperty(
+    element: HTMLElement,
+    property: string,
+    value: string,
+  ): void {
+    if (value) element.style.setProperty(property, value);
+    else element.style.removeProperty(property);
+  }
+
+  function restoreAttribute(
+    element: HTMLElement,
+    name: string,
+    value: string | null,
+  ): void {
+    if (value === null) element.removeAttribute(name);
+    else element.setAttribute(name, value);
+  }
+
+  function restoreRenderSnapshot(snapshot: RenderSnapshot): void {
+    restoreStyleProperty(elements.yesFace, "--yes-scale", snapshot.yesScale);
+    restoreStyleProperty(elements.noFace, "--no-scale", snapshot.noScale);
+    restoreStyleProperty(elements.noSeat, "--no-pose-x", snapshot.noPoseX);
+    restoreStyleProperty(elements.noSeat, "--no-pose-y", snapshot.noPoseY);
+    restoreStyleProperty(elements.noSeat, "--no-rotation", snapshot.noRotation);
+    restoreAttribute(elements.stage, "data-swapped", snapshot.swapped);
+    restoreAttribute(elements.stage, "data-disguised", snapshot.disguised);
+    elements.noLabel.textContent = snapshot.noLabel;
+    elements.noCostume.textContent = snapshot.noCostume;
+    elements.noCostume.hidden = snapshot.noCostumeHidden;
+    restoreAttribute(elements.noButton, "aria-label", snapshot.noAriaLabel);
+  }
 
   function suppressTransitions(): () => void {
     const previous = transitionElements.map((element) => (
@@ -559,16 +686,24 @@ export function createTrickVisualController(
   function previewInternal(
     patch: TrickVisualPatch,
     preservePersistentLayers = false,
+    previewRefusalReady = refusalReady,
   ): VisualPreview {
     const previous = committed;
+    let rollback = captureRenderSnapshot();
     const restoreTransitions = suppressTransitions();
+    let previewFailed = false;
     try {
       render(previous);
+      rollback = captureRenderSnapshot();
+      if (previewRefusalReady !== refusalReady) {
+        render(previous, previewRefusalReady);
+      }
       const before = measure();
+      const fallback = { state: previous, measurement: before };
       const requested = applyTrickVisualPatch(previous, patch);
       const after = preservePersistentLayers
-        ? validateCopyReflow(requested)
-        : validate(requested, { state: previous, measurement: before });
+        ? validateCopyReflow(requested, fallback, previewRefusalReady)
+        : validate(requested, fallback, previewRefusalReady);
       return Object.freeze({
         previous,
         target: after.state,
@@ -577,9 +712,27 @@ export function createTrickVisualController(
         afterYes: after.measurement.yesVisual,
         afterNo: after.measurement.noVisual,
       });
+    } catch (error) {
+      previewFailed = true;
+      throw error;
     } finally {
-      render(previous);
-      restoreTransitions();
+      let cleanupFailed = false;
+      let cleanupError: unknown;
+      try {
+        restoreRenderSnapshot(rollback);
+      } catch (error) {
+        cleanupFailed = true;
+        cleanupError = error;
+      }
+      try {
+        restoreTransitions();
+      } catch (error) {
+        if (!cleanupFailed) {
+          cleanupFailed = true;
+          cleanupError = error;
+        }
+      }
+      if (!previewFailed && cleanupFailed) throw cleanupError;
     }
   }
 
@@ -625,9 +778,20 @@ export function createTrickVisualController(
     },
 
     setRefusalReady(ready: boolean): void {
+      const next = previewInternal({}, true, ready);
+      const rollback = captureRenderSnapshot();
+      try {
+        render(next.target, ready);
+      } catch (error) {
+        try {
+          restoreRenderSnapshot(rollback);
+        } catch {
+          // Preserve the render/measurement failure that rejected this readiness.
+        }
+        throw error;
+      }
       refusalReady = ready;
-      const next = previewInternal({}, true);
-      controller.commit(next.target);
+      committed = next.target;
     },
 
     revalidate(): void {

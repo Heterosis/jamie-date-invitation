@@ -125,15 +125,18 @@ describe("chooseSafeNoPose", () => {
       currentNo: rect(278, 328, 44, 44),
       yes: rect(424, 348, 44, 44),
     });
-    const destinations = (["runaway", "magnet", "plane", "returned"] as const)
+    const poses = (["runaway", "magnet", "plane", "returned"] as const)
       .map((intent) => chooseSafeNoPose(snapshot, {
         intent,
         attempt: 0,
         currentRotation: 0,
-      }))
-      .map((pose) => `${pose?.centerX},${pose?.centerY}`);
+      }));
+
+    poses.forEach((pose) => expect(pose).not.toBeNull());
+    const destinations = poses.map((pose) => `${pose!.centerX},${pose!.centerY}`);
 
     expect(new Set(destinations).size).toBe(4);
+    expect(poses[0]).toMatchObject({ centerX: 101.44, centerY: 510.52 });
   });
 
   it("normalizes negative attempts deterministically", () => {
@@ -222,6 +225,7 @@ class ElementStub {
   hidden = false;
   measureCount = 0;
   failAtMeasure: number | null = null;
+  measureFailureMessage = "measurement failed";
   protectedChildren: ElementStub[] = [];
   rectProvider: () => Rect = () => rect(0, 0, 0, 0);
   sizeProvider: () => { width: number; height: number } = () => ({ width: 0, height: 0 });
@@ -238,7 +242,7 @@ class ElementStub {
   getBoundingClientRect(): DOMRect {
     this.measureCount += 1;
     if (this.measureCount === this.failAtMeasure) {
-      throw new Error("measurement failed");
+      throw new Error(this.measureFailureMessage);
     }
     return domRect(this.rectProvider());
   }
@@ -437,6 +441,48 @@ function createHarness(protectedRects: readonly Rect[] = []): Harness {
   };
 }
 
+function transitionElements(harness: Harness): ElementStub[] {
+  return [
+    harness.elements.actions,
+    harness.elements.yesSeat,
+    harness.elements.noSeat,
+    harness.elements.yesMotion,
+    harness.elements.noMotion,
+    harness.elements.yesButton,
+    harness.elements.noButton,
+    harness.elements.yesFace,
+    harness.elements.noFace,
+  ] as unknown as ElementStub[];
+}
+
+function totalRectReads(harness: Harness): number {
+  const renderElements = Object.values(harness.elements) as unknown as ElementStub[];
+  const measuredElements = new Set([
+    ...renderElements,
+    ...harness.letter.protectedChildren,
+  ]);
+  return [...measuredElements].reduce((total, element) => total + element.measureCount, 0);
+}
+
+function renderOwnedState(harness: Harness): object {
+  return {
+    yesScale: harness.yesFace.style.getPropertyValue("--yes-scale"),
+    noScale: harness.noFace.style.getPropertyValue("--no-scale"),
+    noPoseX: harness.noSeat.style.getPropertyValue("--no-pose-x"),
+    noPoseY: harness.noSeat.style.getPropertyValue("--no-pose-y"),
+    noRotation: harness.noSeat.style.getPropertyValue("--no-rotation"),
+    swapped: harness.stage.getAttribute("data-swapped"),
+    disguised: harness.stage.getAttribute("data-disguised"),
+    label: harness.noLabel.textContent,
+    costume: harness.noCostume.textContent,
+    costumeHidden: harness.noCostume.hidden,
+    ariaLabel: harness.noButton.getAttribute("aria-label"),
+    transitions: transitionElements(harness).map(
+      (element) => element.style.getPropertyValue("transition"),
+    ),
+  };
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -528,6 +574,24 @@ describe("createTrickVisualController", () => {
     expect(harness.noLabel.textContent).toBe("NO, SORRY");
   });
 
+  it("bounds layout reads when scale cannot repair an unsafe pose and order", () => {
+    const harness = createHarness([rect(100, 470, 52, 60)]);
+    const readsBefore = totalRectReads(harness);
+
+    const preview = harness.controller.preview({
+      yesScale: 1.5,
+      swapped: true,
+      noPose: { centerX: 20, centerY: 500, rotation: 0 },
+    });
+    const previewReads = totalRectReads(harness) - readsBefore;
+
+    expect(preview.target.yesScale).toBeCloseTo(1.1, 8);
+    expect(preview.target.swapped).toBe(false);
+    expect(preview.target.noPose).toBeNull();
+    // 8 baseline + (10 + 8) impossible lower probes + 7 * 8 binary/endpoint probes.
+    expect(previewReads).toBeLessThanOrEqual(82);
+  });
+
   it("reduces YES growth to the nearest value clear of protected content", () => {
     const harness = createHarness([rect(170, 470, 30, 60)]);
     const posed = harness.controller.preview({
@@ -562,6 +626,71 @@ describe("createTrickVisualController", () => {
     expect(harness.noCostume.textContent).toBe("");
     expect((harness.elements.noButton as unknown as ElementStub).getAttribute("aria-label")).toBeNull();
   });
+
+  it("restores transitions and render-owned state when posed rollback measurement also throws", () => {
+    const harness = createHarness();
+    const posed = harness.controller.preview({
+      noPose: { centerX: 500, centerY: 420, rotation: 5 },
+      yesScale: 1.1,
+      noScale: 0.82,
+      swapped: true,
+      disguised: true,
+    });
+    harness.controller.commit(posed.target);
+    transitionElements(harness).forEach((element, index) => {
+      if (index % 2 === 0) element.style.setProperty("transition", `opacity ${index + 1}s`);
+    });
+    const before = renderOwnedState(harness);
+
+    harness.yesFace.failAtMeasure = harness.yesFace.measureCount + 2;
+    harness.yesFace.measureFailureMessage = "preview measurement failed";
+    harness.letter.failAtMeasure = harness.letter.measureCount + 5;
+    harness.letter.measureFailureMessage = "rollback measurement failed";
+
+    let thrown: unknown;
+    try {
+      harness.controller.preview({
+        yesScale: 1.4,
+        noScale: 0.7,
+        swapped: false,
+        disguised: false,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect.soft(thrown).toMatchObject({ message: "preview measurement failed" });
+    expect.soft(renderOwnedState(harness)).toEqual(before);
+    expect(harness.controller.state).toBe(posed.target);
+  });
+
+  it.each([
+    { initialReady: false, requestedReady: true },
+    { initialReady: true, requestedReady: false },
+  ])(
+    "keeps refusal readiness and its committed render atomic when changing $initialReady to $requestedReady fails",
+    ({ initialReady, requestedReady }) => {
+      const harness = createHarness();
+      const posed = harness.controller.preview({
+        noPose: { centerX: 500, centerY: 420, rotation: 5 },
+        yesScale: 1.1,
+        noScale: 0.82,
+        swapped: true,
+        disguised: true,
+      });
+      harness.controller.commit(posed.target);
+      if (initialReady) harness.controller.setRefusalReady(true);
+      const stateBefore = harness.controller.state;
+      const renderBefore = renderOwnedState(harness);
+      harness.yesFace.failAtMeasure = harness.yesFace.measureCount + 1;
+
+      expect(() => harness.controller.setRefusalReady(requestedReady))
+        .toThrow("measurement failed");
+
+      expect(harness.controller.state).toBe(stateBefore);
+      expect(renderOwnedState(harness)).toEqual(renderBefore);
+    },
+  );
 
   it("keeps refusal copy independent from disguise state and avoids a duplicate costume", () => {
     const harness = createHarness();
