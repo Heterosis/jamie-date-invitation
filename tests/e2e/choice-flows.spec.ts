@@ -28,6 +28,98 @@ test("YES celebrates without opening external pages automatically", async ({ pag
   expect(new URL((await telegram.getAttribute("href"))!).pathname).toBe("/alex_date");
 });
 
+test("success decorations do not cover desktop content or the Telegram action", async ({ page }, testInfo) => {
+  test.skip(
+    !testInfo.project.name.startsWith("desktop"),
+    "Desktop success-card geometry regression",
+  );
+
+  await page.setViewportSize({ width: 1872, height: 990 });
+  await page.goto(
+    "/?to=Jamie&from=Alex&date=2026-08-08&time=19%3A30&telegram=alex_date&notifyName=YOU-KNOW-WHO",
+  );
+
+  await page.locator("[data-yes]").click();
+  await expect(page.locator("[data-success]")).toBeVisible();
+
+  const letter = page.locator("[data-letter]");
+  await letter.evaluate(async (element) => {
+    await Promise.all(
+      element
+        .getAnimations({ subtree: true })
+        .map((animation) => animation.finished.catch(() => undefined)),
+    );
+  });
+
+  const blockers = await page
+    .locator(".eyebrow, [data-telegram]")
+    .evaluateAll((elements) =>
+      elements.flatMap((element) => {
+        const rect = element.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        const hit = document.elementFromPoint(x, y);
+
+        if (hit === element || element.contains(hit)) return [];
+
+        return [{
+          target: element.matches(".eyebrow") ? "eyebrow" : "telegram",
+          hit: hit instanceof HTMLElement
+            ? `${hit.tagName.toLowerCase()}.${hit.className}`
+            : String(hit),
+        }];
+      }),
+    );
+
+  const decorations = await letter.evaluate((element) => {
+    const letterStyle = getComputedStyle(element);
+    const pseudoElements = [
+      {
+        selector: "::before",
+        gutter: Number.parseFloat(letterStyle.paddingInlineStart),
+        edge: "start",
+      },
+      {
+        selector: "::after",
+        gutter: Number.parseFloat(letterStyle.paddingInlineEnd),
+        edge: "end",
+      },
+    ] as const;
+
+    return pseudoElements.map(({ selector, gutter, edge }) => {
+      const style = getComputedStyle(element, selector);
+      const matrix = style.transform === "none"
+        ? new DOMMatrixReadOnly()
+        : new DOMMatrixReadOnly(style.transform);
+      const width = Number.parseFloat(style.width);
+      const scaleX = Math.hypot(matrix.a, matrix.b);
+      const expansion = (width * scaleX - width) / 2;
+      const inset = Number.parseFloat(edge === "start"
+        ? style.insetInlineStart
+        : style.insetInlineEnd);
+
+      return {
+        pointerEvents: style.pointerEvents,
+        width,
+        staysInsideGutter:
+          inset - expansion >= 0
+          && inset + width + expansion <= gutter,
+      };
+    });
+  });
+
+  expect.soft(blockers).toEqual([]);
+  expect.soft(decorations.every(({ pointerEvents }) => pointerEvents === "none")).toBe(true);
+  expect.soft(decorations.every(({ width }) => width <= 56)).toBe(true);
+  expect.soft(decorations.every(({ staysInsideGutter }) => staysInsideGutter)).toBe(true);
+
+  // Verify pointer accessibility without opening Telegram.
+  await page.locator("[data-telegram]").click({
+    trial: true,
+    timeout: 2_000,
+  });
+});
+
 test("clears trick visuals before showing YES result actions in order", async ({ page }) => {
   await page.goto("/?to=Jamie&date=2026-08-08&time=19%3A30");
   await seedResultTrickResidue(page);

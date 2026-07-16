@@ -1,8 +1,9 @@
 .desk .is-celebrating { animation: celebrate-letter .8s cubic-bezier(.2,.8,.2,1) both; }
-.desk .is-celebrating::before, .desk .is-celebrating::after { content: "♥  ✿  ♥"; position: absolute; inset-inline: 0; top: 14%; color: var(--burgundy); font: 28px var(--hand); animation: confetti 1.2s ease both; }
-.desk .is-celebrating::after { top: auto; bottom: 13%; animation-delay: .12s; }
+.desk .is-celebrating::before, .desk .is-celebrating::after { content: "♥\A✿\A♥"; position: absolute; inline-size: 48px; inset-inline-start: 14px; top: 30%; color: var(--burgundy); font: 28px/1.05 var(--hand); white-space: pre; pointer-events: none; animation: confetti 1.2s ease both; }
+.desk .is-celebrating::after { inset-inline-start: auto; inset-inline-end: 14px; top: 48%; animation-delay: .12s; }
 .desk .is-declined { filter: saturate(.78); transform: rotate(.4deg); }
 .desk .result--declined h2 { color: var(--burgundy); }
 .desk a[aria-disabled="true"] { opacity: .55; pointer-events: none; }
 @keyframes celebrate-letter { 35% { transform: rotate(.7deg) scale(1.035); } 70% { transform: rotate(-.3deg) scale(.995); } }
 @keyframes confetti { from { opacity: 0; transform: translateY(25px) scale(.6); } 45% { opacity: 1; } to { opacity: .85; transform: translateY(-28px) scale(1.15); } }
+@media (max-width: 720px) { .desk .is-celebrating::before, .desk .is-celebrating::after { display: none; } }
