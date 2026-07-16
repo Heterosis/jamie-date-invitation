@@ -43,12 +43,28 @@ function deferred<T>(): {
 function fakeAnimation(
   finished: Promise<unknown>,
   onCancel: () => void = () => undefined,
+  errors: {
+    readonly pause?: Error;
+    readonly play?: Error;
+    readonly finished?: Error;
+    readonly cancel?: Error;
+  } = {},
 ): Animation {
   return {
-    finished,
-    pause: vi.fn(),
-    play: vi.fn(),
-    cancel: vi.fn(onCancel),
+    get finished(): Promise<unknown> {
+      if (errors.finished) throw errors.finished;
+      return finished;
+    },
+    pause: vi.fn(() => {
+      if (errors.pause) throw errors.pause;
+    }),
+    play: vi.fn(() => {
+      if (errors.play) throw errors.play;
+    }),
+    cancel: vi.fn(() => {
+      onCancel();
+      if (errors.cancel) throw errors.cancel;
+    }),
   } as unknown as Animation;
 }
 
@@ -121,6 +137,7 @@ class FakeElement extends EventTarget {
 class FakeWindow extends EventTarget {
   readonly addedListeners: string[] = [];
   readonly removedListeners: string[] = [];
+  readonly listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
 
   override addEventListener(
     type: string,
@@ -128,6 +145,11 @@ class FakeWindow extends EventTarget {
     options?: boolean | AddEventListenerOptions,
   ): void {
     this.addedListeners.push(type);
+    if (callback) {
+      const listeners = this.listeners.get(type) ?? new Set();
+      listeners.add(callback);
+      this.listeners.set(type, listeners);
+    }
     super.addEventListener(type, callback, options);
   }
 
@@ -137,7 +159,16 @@ class FakeWindow extends EventTarget {
     options?: boolean | EventListenerOptions,
   ): void {
     this.removedListeners.push(type);
+    if (callback) this.listeners.get(type)?.delete(callback);
     super.removeEventListener(type, callback, options);
+  }
+
+  emit(type: string): void {
+    const event = new Event(type);
+    for (const listener of this.listeners.get(type) ?? []) {
+      if (typeof listener === "function") listener.call(this, event);
+      else listener.handleEvent(event);
+    }
   }
 }
 
@@ -198,6 +229,9 @@ function fakeView(): FakeViewFixture {
 }
 
 type FakeVisuals = TrickVisualController & {
+  readonly renderedState: Readonly<TrickVisualState>;
+  readonly committedState: Readonly<TrickVisualState>;
+  readonly refusalReady: boolean;
   readonly preview: MockedFunction<TrickVisualController["preview"]>;
   readonly stage: MockedFunction<TrickVisualController["stage"]>;
   readonly commit: MockedFunction<TrickVisualController["commit"]>;
@@ -209,12 +243,27 @@ type FakeVisuals = TrickVisualController & {
 
 function fakeVisuals(options: {
   readonly onCommit?: (state: Readonly<TrickVisualState>) => void;
+  readonly onStage?: (state: Readonly<TrickVisualState>) => void;
   readonly onRevalidate?: () => void;
+  readonly commitError?: Error;
+  readonly resetError?: Error;
 } = {}): FakeVisuals {
   let committed: Readonly<TrickVisualState> = INITIAL_TRICK_VISUAL_STATE;
+  let rendered: Readonly<TrickVisualState> = INITIAL_TRICK_VISUAL_STATE;
+  let refusalReady = false;
+  let remainingCommitFailures = options.commitError ? 1 : 0;
   const controller = {
     get state(): Readonly<TrickVisualState> {
       return committed;
+    },
+    get committedState(): Readonly<TrickVisualState> {
+      return committed;
+    },
+    get renderedState(): Readonly<TrickVisualState> {
+      return rendered;
+    },
+    get refusalReady(): boolean {
+      return refusalReady;
     },
     choosePose: vi.fn(() => null),
     preview: vi.fn((patch: TrickVisualPatch): VisualPreview => ({
@@ -225,16 +274,29 @@ function fakeVisuals(options: {
       afterYes: EMPTY_RECT,
       afterNo: EMPTY_RECT,
     })),
-    stage: vi.fn(),
+    stage: vi.fn((state: Readonly<TrickVisualState>): void => {
+      rendered = state;
+      options.onStage?.(state);
+    }),
     commit: vi.fn((state: Readonly<TrickVisualState>): void => {
-      committed = state;
+      rendered = state;
       options.onCommit?.(state);
+      if (remainingCommitFailures > 0) {
+        remainingCommitFailures -= 1;
+        throw options.commitError;
+      }
+      committed = state;
     }),
     clearDisguise: vi.fn(),
-    setRefusalReady: vi.fn(),
+    setRefusalReady: vi.fn((ready: boolean): void => {
+      refusalReady = ready;
+    }),
     revalidate: vi.fn(() => options.onRevalidate?.()),
     reset: vi.fn(() => {
+      if (options.resetError) throw options.resetError;
+      rendered = INITIAL_TRICK_VISUAL_STATE;
       committed = INITIAL_TRICK_VISUAL_STATE;
+      refusalReady = false;
     }),
   };
   return controller as unknown as FakeVisuals;
@@ -246,10 +308,15 @@ interface FakeRaf {
   flush(): void;
 }
 
-function fakeRaf(): FakeRaf {
+function fakeRaf(requestFailures = 0): FakeRaf {
   let nextId = 0;
+  let remainingRequestFailures = requestFailures;
   const queued = new Map<number, FrameRequestCallback>();
   const request = vi.fn((callback: FrameRequestCallback): number => {
+    if (remainingRequestFailures > 0) {
+      remainingRequestFailures -= 1;
+      throw new Error("RAF scheduling failed");
+    }
     nextId += 1;
     queued.set(nextId, callback);
     return nextId;
@@ -278,7 +345,11 @@ interface SetupOptions {
   readonly artifactCount?: number;
   readonly effect?: TrickEffect;
   readonly onCommit?: (state: Readonly<TrickVisualState>) => void;
+  readonly onStage?: (state: Readonly<TrickVisualState>) => void;
   readonly onRevalidate?: () => void;
+  readonly commitError?: Error;
+  readonly resetError?: Error;
+  readonly rafRequestFailures?: number;
   readonly artifactRemoveError?: Error;
   readonly setTimeout?: typeof globalThis.setTimeout;
 }
@@ -294,9 +365,12 @@ function setupRunner(options: SetupOptions = {}) {
   const artifacts: FakeElement[] = [];
   const visuals = fakeVisuals({
     onCommit: options.onCommit,
+    onStage: options.onStage,
     onRevalidate: options.onRevalidate,
+    commitError: options.commitError,
+    resetError: options.resetError,
   });
-  const raf = fakeRaf();
+  const raf = fakeRaf(options.rafRequestFailures);
   const fakeWindow = new FakeWindow();
   vi.stubGlobal("window", fakeWindow);
 
@@ -498,8 +572,11 @@ describe("createTrickRunner", () => {
       expect(await run.finished).toEqual({ id: "runaway-rsvp", outcome: "fallback" });
       if (persistence === "commit-target") {
         expect(fixture.runner.visualState.yesScale).toBe(1.3);
+        expect(fixture.visuals.renderedState.yesScale).toBe(1.3);
       } else {
         expect(fixture.runner.visualState).toBe(previous);
+        expect(fixture.visuals.committedState).toBe(previous);
+        expect(fixture.visuals.renderedState).toBe(previous);
         expect(fixture.visuals.commit).not.toHaveBeenCalled();
       }
       expect(fixture.elements.status.textContent).toBe("The tiny trick landed safely.");
@@ -527,21 +604,30 @@ describe("createTrickRunner", () => {
 
   it("uses fallback to discard a transient target", async () => {
     const completion = deferred<void>();
+    const order: string[] = [];
+    const animation = fakeAnimation(completion.promise, () => order.push("cancel"));
     const fixture = setupRunner({
-      animation: fakeAnimation(completion.promise),
+      animation,
       persistence: "transient",
       patch: { yesScale: 1.25 },
       fallbackMs: 500,
       artifactCount: 1,
+      onStage: () => order.push("stage"),
     });
     const previous = fixture.runner.visualState;
 
     const run = fixture.runner.start("yes-garden", 1, { x: 4, y: 4 });
+    expect(fixture.visuals.renderedState.yesScale).toBe(1.25);
+    expect(fixture.visuals.committedState).toBe(previous);
+    order.length = 0;
     await vi.advanceTimersByTimeAsync(500);
 
     expect(await run.finished).toEqual({ id: "yes-garden", outcome: "fallback" });
     expect(fixture.runner.visualState).toBe(previous);
+    expect(fixture.visuals.renderedState).toBe(previous);
+    expect(fixture.visuals.committedState).toBe(previous);
     expect(fixture.visuals.commit).not.toHaveBeenCalled();
+    expect(order.slice(0, 2)).toEqual(["stage", "cancel"]);
     expect(fixture.artifacts[0]?.remove).toHaveBeenCalledTimes(1);
     expectSettled(fixture.elements);
   });
@@ -627,6 +713,29 @@ describe("createTrickRunner", () => {
     expectSettled(fixture.elements);
   });
 
+  it("reset surfaces a visual reset failure after completing cleanup", async () => {
+    const resetError = new Error("reset render failed");
+    const completion = deferred<void>();
+    const fixture = setupRunner({
+      animation: fakeAnimation(completion.promise),
+      resetError,
+      artifactCount: 1,
+    });
+    fixture.elements.noButton.dataset.locked = "true";
+    const run = fixture.runner.start("seat-swap", 3, { x: 3, y: 3 });
+
+    expect(() => fixture.runner.reset()).toThrow(resetError);
+
+    expect(await run.finished).toEqual({ id: "seat-swap", outcome: "cancelled" });
+    expect(fixture.visuals.setRefusalReady).toHaveBeenCalledWith(false);
+    expect(fixture.visuals.reset).toHaveBeenCalledTimes(1);
+    expect(fixture.artifacts[0]?.remove).toHaveBeenCalledTimes(1);
+    expect(fixture.elements.stage.dataset.lastTrick).toBeUndefined();
+    expect(fixture.elements.stage.dataset.attempts).toBe("0");
+    expect(fixture.elements.noButton.dataset.locked).toBeUndefined();
+    expectSettled(fixture.elements);
+  });
+
   it("dispose invalidates late completion and leaves no timers", async () => {
     const completion = deferred<void>();
     const animation = fakeAnimation(completion.promise);
@@ -645,6 +754,77 @@ describe("createTrickRunner", () => {
     expect(fixture.visuals.commit).toHaveBeenCalledTimes(commitCount);
     expect(fixture.elements.status.textContent).toBe(status);
     expect(animation.cancel).toHaveBeenCalledTimes(1);
+    expectSettled(fixture.elements);
+  });
+
+  it("dispose restores initial visual and metadata state while idle", async () => {
+    const completion = deferred<void>();
+    const fixture = setupRunner({
+      animation: fakeAnimation(completion.promise),
+      persistence: "commit-target",
+      patch: { yesScale: 1.3, swapped: true, disguised: true },
+    });
+    const run = fixture.runner.start("tiny-disguise", 6, { x: 6, y: 6 });
+    completion.resolve();
+    expect(await run.finished).toEqual({ id: "tiny-disguise", outcome: "completed" });
+    fixture.runner.setRefusalReady(true);
+    fixture.elements.noButton.dataset.locked = "true";
+    const stray = new FakeElement();
+    stray.dataset.trickArtifact = "true";
+    fixture.elements.stage.append(stray);
+
+    expect(fixture.visuals.committedState).not.toBe(INITIAL_TRICK_VISUAL_STATE);
+    expect(fixture.visuals.renderedState).not.toBe(INITIAL_TRICK_VISUAL_STATE);
+    expect(fixture.visuals.refusalReady).toBe(true);
+    expect(fixture.elements.stage.dataset.lastTrick).toBe("tiny-disguise");
+    expect(fixture.elements.stage.dataset.attempts).toBe("6");
+
+    fixture.runner.dispose();
+    fixture.runner.dispose();
+
+    expect(fixture.visuals.setRefusalReady).toHaveBeenLastCalledWith(false);
+    expect(fixture.visuals.reset).toHaveBeenCalledTimes(1);
+    expect(fixture.visuals.committedState).toBe(INITIAL_TRICK_VISUAL_STATE);
+    expect(fixture.visuals.renderedState).toBe(INITIAL_TRICK_VISUAL_STATE);
+    expect(fixture.visuals.refusalReady).toBe(false);
+    expect(stray.remove).toHaveBeenCalledTimes(1);
+    expect(fixture.elements.stage.dataset.lastTrick).toBeUndefined();
+    expect(fixture.elements.stage.dataset.attempts).toBe("0");
+    expect(fixture.elements.noButton.dataset.locked).toBeUndefined();
+    expectSettled(fixture.elements);
+  });
+
+  it("dispose surfaces reset failure after listeners, frame, and metadata cleanup", async () => {
+    const resetError = new Error("dispose reset failed");
+    const completion = deferred<void>();
+    const fixture = setupRunner({
+      animation: fakeAnimation(completion.promise),
+      patch: { yesScale: 1.3 },
+      resetError,
+      artifactCount: 0,
+    });
+    const run = fixture.runner.start("growing-feelings", 5, { x: 5, y: 5 });
+    completion.resolve();
+    await run.finished;
+    fixture.runner.setRefusalReady(true);
+    fixture.elements.noButton.dataset.locked = "true";
+    const stray = new FakeElement();
+    stray.dataset.trickArtifact = "true";
+    fixture.elements.stage.append(stray);
+    fixture.window.emit("resize");
+
+    expect(() => fixture.runner.dispose()).toThrow(resetError);
+    expect(() => fixture.runner.dispose()).not.toThrow();
+
+    expect(fixture.visuals.setRefusalReady).toHaveBeenLastCalledWith(false);
+    expect(fixture.visuals.reset).toHaveBeenCalledTimes(1);
+    expect(fixture.visuals.refusalReady).toBe(false);
+    expect(fixture.raf.cancel).toHaveBeenCalledTimes(1);
+    expect(fixture.window.removedListeners).toEqual(["resize", "orientationchange"]);
+    expect(stray.remove).toHaveBeenCalledTimes(1);
+    expect(fixture.elements.stage.dataset.lastTrick).toBeUndefined();
+    expect(fixture.elements.stage.dataset.attempts).toBe("0");
+    expect(fixture.elements.noButton.dataset.locked).toBeUndefined();
     expectSettled(fixture.elements);
   });
 
@@ -853,6 +1033,35 @@ describe("createTrickRunner", () => {
     expect(fixture.runner.busy).toBe(false);
   });
 
+  it("downgrades completion when committing the target state fails", async () => {
+    const transitionError = new Error("target render failed");
+    const completion = deferred<void>();
+    const animation = fakeAnimation(completion.promise);
+    const fixture = setupRunner({
+      animation,
+      commitError: transitionError,
+      patch: { yesScale: 1.3 },
+      artifactCount: 1,
+    });
+    const previous = fixture.runner.visualState;
+
+    const run = fixture.runner.start("growing-feelings", 1, { x: 1, y: 1 });
+    completion.resolve();
+
+    expect(await run.finished).toEqual({
+      id: "growing-feelings",
+      outcome: "fallback",
+    });
+    expect(fixture.visuals.commit).toHaveBeenCalledTimes(2);
+    expect(fixture.visuals.commit).toHaveBeenLastCalledWith(previous);
+    expect(fixture.visuals.committedState).toBe(previous);
+    expect(fixture.visuals.renderedState).toBe(previous);
+    expect(fixture.elements.status.textContent).toBe("The tiny trick landed safely.");
+    expect(animation.cancel).toHaveBeenCalledTimes(1);
+    expect(fixture.artifacts[0]?.remove).toHaveBeenCalledTimes(1);
+    expectSettled(fixture.elements);
+  });
+
   it("releases ownership when commit and artifact cleanup callbacks throw", async () => {
     const completion = deferred<void>();
     const animation = fakeAnimation(completion.promise);
@@ -863,16 +1072,119 @@ describe("createTrickRunner", () => {
       },
       artifactRemoveError: new Error("remove failed"),
     });
+    const previous = fixture.runner.visualState;
 
     const run = fixture.runner.start("growing-feelings", 1, { x: 1, y: 1 });
     completion.resolve();
 
     expect(await run.finished).toEqual({
       id: "growing-feelings",
-      outcome: "completed",
+      outcome: "fallback",
     });
+    expect(fixture.visuals.committedState).toBe(previous);
+    expect(fixture.visuals.renderedState).toBe(previous);
+    expect(fixture.elements.status.textContent).toBe("The tiny trick landed safely.");
     expect(animation.cancel).toHaveBeenCalledTimes(1);
     expect(fixture.artifacts[0]?.remove).toHaveBeenCalledTimes(1);
+    expectSettled(fixture.elements);
+  });
+
+  it("turns an animation pause failure into a cleaned fallback", async () => {
+    const completion = deferred<void>();
+    const animation = fakeAnimation(
+      completion.promise,
+      () => undefined,
+      { pause: new Error("pause failed") },
+    );
+    const fixture = setupRunner({ animation, artifactCount: 0 });
+    const previous = fixture.runner.visualState;
+
+    const run = fixture.runner.start("paper-plane", 1, { x: 1, y: 1 });
+
+    expect(await run.finished).toEqual({ id: "paper-plane", outcome: "fallback" });
+    expect(animation.pause).toHaveBeenCalledTimes(1);
+    expect(animation.play).not.toHaveBeenCalled();
+    expect(animation.cancel).toHaveBeenCalledTimes(1);
+    expect(fixture.visuals.committedState).toBe(previous);
+    expect(fixture.visuals.renderedState).toBe(previous);
+    expectSettled(fixture.elements);
+  });
+
+  it("turns an animation play failure into a cleaned fallback", async () => {
+    const completion = deferred<void>();
+    const animation = fakeAnimation(
+      completion.promise,
+      () => undefined,
+      { play: new Error("play failed") },
+    );
+    const fixture = setupRunner({ animation, artifactCount: 1 });
+    const previous = fixture.runner.visualState;
+
+    const run = fixture.runner.start("paper-plane", 1, { x: 1, y: 1 });
+
+    expect(await run.finished).toEqual({ id: "paper-plane", outcome: "fallback" });
+    expect(animation.play).toHaveBeenCalledTimes(1);
+    expect(animation.cancel).toHaveBeenCalledTimes(1);
+    expect(fixture.artifacts[0]?.remove).toHaveBeenCalledTimes(1);
+    expect(fixture.visuals.committedState).toBe(previous);
+    expect(fixture.visuals.renderedState).toBe(previous);
+    expectSettled(fixture.elements);
+  });
+
+  it("turns a throwing Animation.finished getter into fallback", async () => {
+    const completion = deferred<void>();
+    const animation = fakeAnimation(
+      completion.promise,
+      () => undefined,
+      { finished: new Error("finished unavailable") },
+    );
+    const fixture = setupRunner({
+      animation,
+      persistence: "transient",
+      patch: { yesScale: 1.25 },
+    });
+    const previous = fixture.runner.visualState;
+
+    const run = fixture.runner.start("cupid-magnet", 1, { x: 1, y: 1 });
+
+    expect(await run.finished).toEqual({ id: "cupid-magnet", outcome: "fallback" });
+    expect(animation.cancel).toHaveBeenCalledTimes(1);
+    expect(fixture.visuals.committedState).toBe(previous);
+    expect(fixture.visuals.renderedState).toBe(previous);
+    expectSettled(fixture.elements);
+  });
+
+  it("continues cleanup when one animation cancel throws", async () => {
+    const firstCompletion = deferred<void>();
+    const secondCompletion = deferred<void>();
+    const first = fakeAnimation(
+      firstCompletion.promise,
+      () => undefined,
+      { cancel: new Error("cancel failed") },
+    );
+    const second = fakeAnimation(secondCompletion.promise);
+    const fixture = setupRunner({ animations: [first, second], artifactCount: 1 });
+
+    const run = fixture.runner.start("paper-plane", 1, { x: 1, y: 1 });
+    run.cancel();
+
+    expect(await run.finished).toEqual({ id: "paper-plane", outcome: "cancelled" });
+    expect(first.cancel).toHaveBeenCalledTimes(1);
+    expect(second.cancel).toHaveBeenCalledTimes(1);
+    expect(fixture.artifacts[0]?.remove).toHaveBeenCalledTimes(1);
+    expectSettled(fixture.elements);
+  });
+
+  it("allows resize scheduling to retry after RAF throws", () => {
+    const fixture = setupRunner({ artifactCount: 0, rafRequestFailures: 1 });
+
+    expect(() => fixture.window.emit("resize")).not.toThrow();
+    expect(fixture.raf.request).toHaveBeenCalledTimes(1);
+    fixture.window.emit("orientationchange");
+    expect(fixture.raf.request).toHaveBeenCalledTimes(2);
+    fixture.raf.flush();
+
+    expect(fixture.visuals.revalidate).toHaveBeenCalledTimes(1);
     expectSettled(fixture.elements);
   });
 

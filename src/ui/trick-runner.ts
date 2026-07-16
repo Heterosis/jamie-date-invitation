@@ -165,18 +165,38 @@ export function createTrickRunner(
     safe(() => view.stage.setAttribute("aria-busy", "false"));
   }
 
+  function restorePrevious(record: ActiveRun): void {
+    try {
+      visuals.commit(record.previousState);
+    } catch {
+      safe(() => visuals.stage(record.previousState));
+    }
+  }
+
   function settle(token: number, outcome: TrickRunOutcome): void {
     const record = active;
     if (!record || record.token !== token || record.settled) return;
     record.settled = true;
+    let finalOutcome = outcome;
 
     try {
       if (outcome === "completed" || (
         outcome === "fallback" && record.persistence === "commit-target"
       )) {
-        safe(() => visuals.commit(record.targetState));
+        try {
+          visuals.commit(record.targetState);
+        } catch {
+          finalOutcome = "fallback";
+          restorePrevious(record);
+        }
+      } else if (outcome === "fallback") {
+        try {
+          visuals.stage(record.previousState);
+        } catch {
+          restorePrevious(record);
+        }
       } else if (outcome === "cancelled") {
-        safe(() => visuals.commit(record.previousState));
+        restorePrevious(record);
       }
 
       if (record.deadline !== null) {
@@ -189,17 +209,17 @@ export function createTrickRunner(
 
       setIdle();
       safe(() => {
-        if (outcome === "completed") view.status.textContent = record.message;
-        if (outcome === "fallback") {
+        if (finalOutcome === "completed") view.status.textContent = record.message;
+        if (finalOutcome === "fallback") {
           view.status.textContent = "The tiny trick landed safely.";
         }
-        if (outcome === "cancelled") {
+        if (finalOutcome === "cancelled") {
           view.status.textContent = "The tiny trick stopped safely.";
         }
       });
     } finally {
       setIdle();
-      record.resolve({ id: record.id, outcome });
+      record.resolve({ id: record.id, outcome: finalOutcome });
       if (active === record) active = null;
     }
   }
@@ -215,15 +235,48 @@ export function createTrickRunner(
     artifacts.forEach((artifact) => safe(() => artifact.remove()));
   }
 
+  function resetVisualAndMetadataState(): void {
+    let firstTransitionError: unknown;
+    let transitionFailed = false;
+    try {
+      visuals.setRefusalReady(false);
+    } catch (error) {
+      transitionFailed = true;
+      firstTransitionError = error;
+    }
+    try {
+      visuals.reset();
+    } catch (error) {
+      if (!transitionFailed) {
+        transitionFailed = true;
+        firstTransitionError = error;
+      }
+    }
+    cleanupArtifacts();
+    safe(() => delete view.stage.dataset.lastTrick);
+    safe(() => {
+      view.stage.dataset.attempts = "0";
+    });
+    safe(() => delete view.noButton.dataset.locked);
+    setIdle();
+    if (transitionFailed) throw firstTransitionError;
+  }
+
   const queueRevalidation = (): void => {
     if (disposed || queuedFrame !== null) return;
-    queuedFrame = schedulesFrame(() => {
+    queuedFrame = -1;
+    try {
+      const handle = schedulesFrame(() => {
+        queuedFrame = null;
+        if (disposed) return;
+        const token = active?.token;
+        if (token !== undefined) settle(token, "fallback");
+        visuals.revalidate();
+      });
+      if (queuedFrame !== null) queuedFrame = handle;
+    } catch {
       queuedFrame = null;
-      if (disposed) return;
-      const token = active?.token;
-      if (token !== undefined) settle(token, "fallback");
-      visuals.revalidate();
-    });
+    }
   };
 
   resizeTarget?.addEventListener("resize", queueRevalidation);
@@ -395,22 +448,16 @@ export function createTrickRunner(
       const activeToken = active?.token;
       tokenSeed += 1;
       if (activeToken !== undefined) settle(activeToken, "cancelled");
-      safe(() => visuals.setRefusalReady(false));
-      safe(() => visuals.reset());
-      cleanupArtifacts();
-      safe(() => {
-        delete view.stage.dataset.lastTrick;
-        view.stage.dataset.attempts = "0";
-        delete view.noButton.dataset.locked;
-      });
-      setIdle();
+      resetVisualAndMetadataState();
     },
 
     dispose(): void {
       if (disposed) return;
       disposed = true;
-      resizeTarget?.removeEventListener("resize", queueRevalidation);
-      resizeTarget?.removeEventListener("orientationchange", queueRevalidation);
+      safe(() => resizeTarget?.removeEventListener("resize", queueRevalidation));
+      safe(() => {
+        resizeTarget?.removeEventListener("orientationchange", queueRevalidation);
+      });
       if (queuedFrame !== null) {
         safe(() => cancelsFrame(queuedFrame!));
         queuedFrame = null;
@@ -418,8 +465,7 @@ export function createTrickRunner(
       const activeToken = active?.token;
       tokenSeed += 1;
       if (activeToken !== undefined) settle(activeToken, "cancelled");
-      cleanupArtifacts();
-      setIdle();
+      resetVisualAndMetadataState();
     },
   };
 
