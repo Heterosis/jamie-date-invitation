@@ -148,27 +148,43 @@ test("uses stable semantic buttons inside dedicated visual layers", async ({ pag
   expect(result.noHeight).toBeGreaterThanOrEqual(44);
   expect(await page.locator("[data-stage]").getByRole("status").count()).toBe(0);
 
-  const swappedSeats = await page.locator("[data-stage]").evaluate((stage) => {
-    stage.classList.add("trick-swapped");
+  const seatSwap = await page.locator("[data-stage]").evaluate((stage) => {
     const yesSeat = stage.querySelector<HTMLElement>("[data-yes-seat]")!;
     const noSeat = stage.querySelector<HTMLElement>("[data-no-seat]")!;
-    const yesRect = yesSeat.getBoundingClientRect();
-    const noRect = noSeat.getBoundingClientRect();
+    const center = (seat: HTMLElement): { centerX: number; centerY: number; height: number } => {
+      const rect = seat.getBoundingClientRect();
+      return {
+        centerX: rect.left + rect.width / 2,
+        centerY: rect.top + rect.height / 2,
+        height: rect.height,
+      };
+    };
+    const before = { yes: center(yesSeat), no: center(noSeat) };
+    stage.classList.add("trick-swapped");
     const result = {
+      before,
+      after: { yes: center(yesSeat), no: center(noSeat) },
       yesOrder: getComputedStyle(yesSeat).order,
       noOrder: getComputedStyle(noSeat).order,
-      sameRow: Math.abs(yesRect.top - noRect.top) < Math.min(yesRect.height, noRect.height) / 2,
-      yesCenterX: yesRect.left + yesRect.width / 2,
-      noCenterX: noRect.left + noRect.width / 2,
     };
     stage.classList.remove("trick-swapped");
     return result;
   });
 
-  expect.soft(swappedSeats.yesOrder).toBe("2");
-  expect.soft(swappedSeats.noOrder).toBe("1");
-  expect.soft(swappedSeats.sameRow).toBe(true);
-  expect.soft(swappedSeats.noCenterX).toBeLessThan(swappedSeats.yesCenterX);
+  const visuallyPrecedes = (
+    first: { centerX: number; centerY: number; height: number },
+    second: { centerX: number; centerY: number; height: number },
+  ): boolean => {
+    const sameRowTolerance = Math.min(first.height, second.height) * 0.25;
+    return Math.abs(first.centerY - second.centerY) <= sameRowTolerance
+      ? first.centerX < second.centerX
+      : first.centerY < second.centerY;
+  };
+
+  expect.soft(seatSwap.yesOrder).toBe("2");
+  expect.soft(seatSwap.noOrder).toBe("1");
+  expect.soft(visuallyPrecedes(seatSwap.before.yes, seatSwap.before.no)).toBe(true);
+  expect.soft(visuallyPrecedes(seatSwap.after.no, seatSwap.after.yes)).toBe(true);
 
   const no = page.locator("[data-no]");
   for (let index = 0; index < 8; index += 1) await no.dispatchEvent("click");
