@@ -84,7 +84,7 @@ export function wireInvitation(
       return;
     }
 
-    runner.clearDisguise();
+    if (runner.visualState.disguised) runner.clearDisguise();
 
     if (state.canRefuse) {
       state = transition(state, { type: "REAL_NO" });

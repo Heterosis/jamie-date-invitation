@@ -277,7 +277,10 @@ interface ControllerFixture {
   setDisguised(value: boolean): void;
 }
 
-function setupController(options: { readonly ids?: readonly TrickId[] } = {}): ControllerFixture {
+function setupController(options: {
+  readonly ids?: readonly TrickId[];
+  readonly clearDisguiseError?: Error;
+} = {}): ControllerFixture {
   vi.stubGlobal("location", { href: "https://example.test/invitation" });
   vi.stubGlobal("window", {
     setTimeout(callback: () => void): number {
@@ -339,6 +342,7 @@ function setupController(options: { readonly ids?: readonly TrickId[] } = {}): C
 
   const clearDisguise = vi.fn((): void => {
     callOrder.push("clear-disguise");
+    if (options.clearDisguiseError) throw options.clearDisguiseError;
     visualState = Object.freeze({ ...visualState, disguised: false });
     view.stage.removeAttribute("data-disguised");
     view.noLabel.textContent = "NO, SORRY";
@@ -448,6 +452,21 @@ describe("wireInvitation", () => {
     expect(fixture.controller.getState()).toEqual({ kind: "asking", attempts: 1, canRefuse: false });
     expect(fixture.view.stage.dataset.attempts).toBe("1");
     expect(fixture.view.noButton.disabled).toBe(false);
+  });
+
+  it("skips empty disguise validation before one ready NO transaction", async () => {
+    const fixture = setupController({
+      clearDisguiseError: new Error("empty disguise validation must not run"),
+    });
+
+    click(fixture.view.noButton);
+    await flushTransaction();
+
+    expect(fixture.runner.visualState.disguised).toBe(false);
+    expect(fixture.runner.clearDisguise).not.toHaveBeenCalled();
+    expect(fixture.deck.next).toHaveBeenCalledTimes(1);
+    expect(fixture.runner.start).toHaveBeenCalledTimes(1);
+    expect(fixture.controller.getState()).toEqual({ kind: "asking", attempts: 1, canRefuse: false });
   });
 
   it("mouse pointerenter is inert even when it fires twice", async () => {
@@ -571,6 +590,16 @@ describe("wireInvitation", () => {
     expect(fixture.view.noButton.getAttribute("aria-label")).toBe(
       "NO refusal option: Okay, I'll behave…",
     );
+
+    click(fixture.view.noButton);
+
+    expect(fixture.runner.clearDisguise).toHaveBeenCalledTimes(1);
+    expect(fixture.runner.visualState.disguised).toBe(false);
+    expect(fixture.view.noCostume.textContent).toBe("");
+    expect(fixture.view.dialog.open).toBe(true);
+    expect(fixture.deck.next).toHaveBeenCalledTimes(8);
+    expect(fixture.runner.start).toHaveBeenCalledTimes(8);
+    expect(fixture.controller.getState()).toEqual({ kind: "confirmingNo" });
   });
 
   it("resets before YES renders and ignores an old run that resolves later", async () => {
