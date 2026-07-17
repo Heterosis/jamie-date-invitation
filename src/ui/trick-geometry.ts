@@ -197,6 +197,37 @@ export function chooseSafeNoPose(
     }
   }
 
+  if (query.intent === "magnet") {
+    const towardYes = {
+      x: currentYes.x - current.x,
+      y: currentYes.y - current.y,
+    };
+    const distanceToYes = Math.hypot(towardYes.x, towardYes.y);
+    if (distanceToYes > 0) {
+      const direction = {
+        x: towardYes.x / distanceToYes,
+        y: towardYes.y / distanceToYes,
+      };
+      const nudgeDirections = [
+        direction,
+        { x: -direction.y, y: direction.x },
+        { x: direction.y, y: -direction.x },
+        { x: -direction.x, y: -direction.y },
+      ] as const;
+      for (const nudge of nudgeDirections) {
+        const pose: NoPose = {
+          centerX: current.x + nudge.x * 32,
+          centerY: current.y + nudge.y * 32,
+          rotation: query.currentRotation,
+        };
+        if (Math.hypot(pose.centerX - current.x, pose.centerY - current.y) >= 24
+          && isSafeNoRect(snapshot, poseRect(pose, snapshot.noHitSize))) {
+          return pose;
+        }
+      }
+    }
+  }
+
   const fallbackPose: NoPose = {
     centerX: current.x,
     centerY: current.y,
