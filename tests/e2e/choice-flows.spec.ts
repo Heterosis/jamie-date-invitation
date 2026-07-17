@@ -228,6 +228,15 @@ test("YES during a busy trick cancels immediately and celebrates once", async ({
   await expect(page.getByRole("heading", { name: "It's a date!" })).toHaveCount(1);
   await assertNoTrickResidue(page);
   expect(errors).toEqual([]);
+
+  const terminalStatus = await page.getByRole("status").textContent();
+  const terminalHeading = await page.getByRole("heading", { name: "It's a date!" }).textContent();
+  await page.waitForTimeout(1_300);
+  await expect(page.getByRole("status")).toHaveText(terminalStatus!);
+  await expect(page.getByRole("heading", { name: "It's a date!" })).toHaveText(terminalHeading!);
+  await expect(page.getByRole("heading", { name: "It's a date!" })).toHaveCount(1);
+  await assertNoTrickResidue(page);
+  expect(errors).toEqual([]);
 });
 
 test("accepts a genuine refusal only after the dramatic confirmation", async ({ page }) => {

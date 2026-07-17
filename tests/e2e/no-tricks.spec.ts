@@ -109,6 +109,17 @@ test("keeps persistent Growing scale while cosmetic face hover still lifts", asy
 
   await activateNoAndWait(page);
   await expect(stage).toHaveAttribute("data-last-trick", "growing-feelings");
+  const persistentBeforeHover = await stage.evaluate((element) => {
+    const scaleX = (selector: string): number => {
+      const transform = getComputedStyle(element.querySelector<HTMLElement>(selector)!).transform;
+      return transform === "none" ? 1 : new DOMMatrixReadOnly(transform).a;
+    };
+    return {
+      yesFaceScaleX: scaleX("[data-yes-face]"),
+      noFaceScaleX: scaleX("[data-no-face]"),
+    };
+  });
+
   await yes.hover();
   await expect.poll(async () => yes.evaluate((button) => {
     const value = getComputedStyle(
@@ -145,6 +156,8 @@ test("keeps persistent Growing scale while cosmetic face hover still lifts", asy
   expect(growing.noButtonScaleX).toBeCloseTo(1, 4);
   expect(growing.yesFaceScaleX).toBeGreaterThan(1);
   expect(growing.noFaceScaleX).toBeLessThan(1);
+  expect(growing.yesFaceScaleX).toBeCloseTo(persistentBeforeHover.yesFaceScaleX, 4);
+  expect(growing.noFaceScaleX).toBeCloseTo(persistentBeforeHover.noFaceScaleX, 4);
   expect(growing.yesFaceTranslateY).toBeCloseTo(-2, 1);
   expect(growing.noFaceTranslateY).toBeCloseTo(0, 4);
 });

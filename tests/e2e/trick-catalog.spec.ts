@@ -145,6 +145,13 @@ test("a later spatial trick replaces the absolute NO translation", async ({ page
   expect(first.absoluteTranslation).toBe(true);
   expect(second.safe).toBe(true);
   expect(second.absoluteTranslation).toBe(true);
+  const replacementDistance = Math.hypot(
+    second.center.x - first.center.x,
+    second.center.y - first.center.y,
+  );
+  expect(replacementDistance).toBeGreaterThanOrEqual(24);
+  expect({ x: second.poseX, y: second.poseY })
+    .not.toEqual({ x: first.poseX, y: first.poseY });
   await expect(page.locator("[data-stage]")).toHaveAttribute("data-last-trick", "paper-plane");
   const letter = await page.locator("[data-letter]").boundingBox();
   expect(letter).not.toBeNull();
