@@ -1,5 +1,5 @@
 import type { TrickId } from "../domain/trick-deck";
-import type { SpatialIntent, VisualPreview } from "./trick-geometry";
+import type { Point, SpatialIntent, VisualPreview } from "./trick-geometry";
 import type { TrickEffectContext, TrickRegistry } from "./trick-runner";
 
 export interface LegacyTrickContext {
@@ -27,6 +27,40 @@ function centerOf(value: DOMRectReadOnly): { readonly x: number; readonly y: num
 
 function transformDelta(from: DOMRectReadOnly, to: DOMRectReadOnly): string {
   return `translate(${from.left - to.left}px, ${from.top - to.top}px)`;
+}
+
+function centerDelta(from: DOMRectReadOnly, to: DOMRectReadOnly): Point {
+  const fromCenter = centerOf(from);
+  const toCenter = centerOf(to);
+  return { x: fromCenter.x - toCenter.x, y: fromCenter.y - toCenter.y };
+}
+
+function rotateVector(value: Point, degrees: number): Point {
+  const radians = degrees * Math.PI / 180;
+  return {
+    x: value.x * Math.cos(radians) - value.y * Math.sin(radians),
+    y: value.x * Math.sin(radians) + value.y * Math.cos(radians),
+  };
+}
+
+function noMotionRotationDelta(preview: VisualPreview): number {
+  const previousRotation = preview.previous.noPose?.rotation ?? 0;
+  const targetRotation = preview.target.noPose?.rotation ?? 0;
+  return previousRotation - targetRotation;
+}
+
+function noMotionTransform(
+  preview: VisualPreview,
+  letterDelta: Point,
+  localRotation = noMotionRotationDelta(preview),
+): string {
+  const targetRotation = preview.target.noPose?.rotation ?? 0;
+  const localDelta = rotateVector(letterDelta, -targetRotation);
+  return `translate(${localDelta.x}px, ${localDelta.y}px) rotate(${localRotation}deg)`;
+}
+
+function letterLocalActivation(context: TrickEffectContext): Point {
+  return context.activation;
 }
 
 function flipKeyframes(before: DOMRectReadOnly, after: DOMRectReadOnly): Keyframe[] {
@@ -58,26 +92,34 @@ function ownedArtifact(context: TrickEffectContext, className: string): HTMLElem
 export const TRICK_EFFECTS = {
   "runaway-rsvp": (context) => {
     const { preview, posed } = choosePosePreview(context, "runaway");
-    const startX = preview.beforeNo.left - preview.afterNo.left;
-    const startY = preview.beforeNo.top - preview.afterNo.top;
+    const start = centerDelta(preview.beforeNo, preview.afterNo);
+    const rotationDelta = noMotionRotationDelta(preview);
     const keyframes: Keyframe[] = posed
       ? [
-        { transform: `translate(${startX}px, ${startY}px)` },
+        { transform: noMotionTransform(preview, start) },
         {
           offset: 0.38,
-          transform: `translate(${startX * 0.66}px, ${startY * 0.45 - 28}px)`,
+          transform: noMotionTransform(
+            preview,
+            { x: start.x * 0.66, y: start.y * 0.45 - 28 },
+            rotationDelta * 0.66,
+          ),
         },
         {
           offset: 0.72,
-          transform: `translate(${startX * 0.3}px, ${startY * 0.16 - 12}px)`,
+          transform: noMotionTransform(
+            preview,
+            { x: start.x * 0.3, y: start.y * 0.16 - 12 },
+            rotationDelta * 0.3,
+          ),
         },
-        { transform: "translate(0, 0)" },
+        { transform: "translate(0, 0) rotate(0deg)" },
       ]
       : [
-        { transform: "translate(0, 0)" },
-        { transform: "translate(-6px, -8px)" },
-        { transform: "translate(6px, -4px)" },
-        { transform: "translate(0, 0)" },
+        { transform: noMotionTransform(preview, { x: 0, y: 0 }) },
+        { transform: noMotionTransform(preview, { x: -6, y: -8 }, -2) },
+        { transform: noMotionTransform(preview, { x: 6, y: -4 }, 2) },
+        { transform: "translate(0, 0) rotate(0deg)" },
       ];
     context.animate(context.view.noMotion, keyframes, {
       duration: 760,
@@ -122,11 +164,18 @@ export const TRICK_EFFECTS = {
       easing: "cubic-bezier(.2,.8,.2,1)",
       fill: "both",
     });
-    context.animate(context.view.noMotion, flipKeyframes(preview.beforeNo, preview.afterNo), {
-      duration: 650,
-      easing: "cubic-bezier(.2,.8,.2,1)",
-      fill: "both",
-    });
+    context.animate(
+      context.view.noMotion,
+      [
+        { transform: noMotionTransform(preview, centerDelta(preview.beforeNo, preview.afterNo)) },
+        { transform: "translate(0, 0) rotate(0deg)" },
+      ],
+      {
+        duration: 650,
+        easing: "cubic-bezier(.2,.8,.2,1)",
+        fill: "both",
+      },
+    );
     return {
       message: "The buttons swapped seats before accepting another click.",
       preview,
@@ -137,23 +186,28 @@ export const TRICK_EFFECTS = {
 
   "cupid-magnet": (context) => {
     const { preview, posed } = choosePosePreview(context, "magnet");
+    const rotationDelta = noMotionRotationDelta(preview);
     let keyframes: Keyframe[];
     if (posed) {
       const yesCenter = centerOf(preview.beforeYes);
       const targetCenter = centerOf(preview.afterNo);
       keyframes = [
-        { transform: transformDelta(preview.beforeNo, preview.afterNo) },
+        { transform: noMotionTransform(preview, centerDelta(preview.beforeNo, preview.afterNo)) },
         {
           offset: 0.58,
-          transform: `translate(${yesCenter.x - targetCenter.x}px, ${yesCenter.y - targetCenter.y}px)`,
+          transform: noMotionTransform(
+            preview,
+            { x: yesCenter.x - targetCenter.x, y: yesCenter.y - targetCenter.y },
+            rotationDelta * 0.42,
+          ),
         },
-        { transform: "translate(0, 0)" },
+        { transform: "translate(0, 0) rotate(0deg)" },
       ];
     } else {
       keyframes = [
-        { transform: "translate(0, 0)" },
-        { transform: "translate(-4px, -4px) rotate(-2deg)" },
-        { transform: "translate(0, 0)" },
+        { transform: noMotionTransform(preview, { x: 0, y: 0 }) },
+        { transform: noMotionTransform(preview, { x: -4, y: -4 }, -2) },
+        { transform: "translate(0, 0) rotate(0deg)" },
       ];
     }
     context.animate(context.view.noMotion, keyframes, {
@@ -171,21 +225,28 @@ export const TRICK_EFFECTS = {
 
   "paper-plane": (context) => {
     const { preview, posed } = choosePosePreview(context, "plane");
-    const startX = preview.beforeNo.left - preview.afterNo.left;
-    const startY = preview.beforeNo.top - preview.afterNo.top;
+    const start = centerDelta(preview.beforeNo, preview.afterNo);
+    const rotationDelta = noMotionRotationDelta(preview);
     const motionKeyframes: Keyframe[] = posed
       ? [
-        { opacity: 1, transform: `translate(${startX}px, ${startY}px)` },
+        { opacity: 1, transform: noMotionTransform(preview, start) },
         {
           opacity: 1,
           offset: 0.58,
-          transform: `translate(${startX * 0.45 + 70}px, ${startY * 0.4 - 92}px) rotate(22deg) scale(.58)`,
+          transform: `${noMotionTransform(
+            preview,
+            { x: start.x * 0.45 + 70, y: start.y * 0.4 - 92 },
+            rotationDelta * 0.4 + 22,
+          )} scale(.58)`,
         },
         { opacity: 1, transform: "translate(0, 0) rotate(0deg) scale(1)" },
       ]
       : [
-        { opacity: 1, transform: "translate(0, 0)" },
-        { opacity: 0.88, transform: "translate(0, -8px) rotate(5deg) scale(.9)" },
+        { opacity: 1, transform: noMotionTransform(preview, { x: 0, y: 0 }) },
+        {
+          opacity: 0.88,
+          transform: `${noMotionTransform(preview, { x: 0, y: -8 }, 5)} scale(.9)`,
+        },
         { opacity: 1, transform: "translate(0, 0) rotate(0deg) scale(1)" },
       ];
     context.animate(context.view.noMotion, motionKeyframes, {
@@ -218,9 +279,7 @@ export const TRICK_EFFECTS = {
 
   "yes-garden": (context) => {
     const preview = context.preview({});
-    const letterRect = context.view.letter.getBoundingClientRect();
-    const originX = context.activation.x - letterRect.left;
-    const originY = context.activation.y - letterRect.top;
+    const origin = letterLocalActivation(context);
     for (let index = 0; index < 8; index += 1) {
       const item = ownedArtifact(context, "trick-garden-item");
       const angle = index * Math.PI / 4;
@@ -228,8 +287,8 @@ export const TRICK_EFFECTS = {
       const x = Math.round(Math.cos(angle) * radius);
       const y = Math.round(Math.sin(angle) * radius);
       item.textContent = index % 2 === 0 ? "🌷" : "YES";
-      item.style.setProperty("--garden-x", `${originX}px`);
-      item.style.setProperty("--garden-y", `${originY}px`);
+      item.style.setProperty("--garden-x", `${origin.x}px`);
+      item.style.setProperty("--garden-y", `${origin.y}px`);
       context.view.letter.append(item);
       context.animate(
         item,
@@ -245,7 +304,12 @@ export const TRICK_EFFECTS = {
             transform: `translate(calc(-50% + ${x}px), calc(-50% + ${y - 12}px)) scale(.9)`,
           },
         ],
-        { duration: 700, delay: index * 35, easing: "ease-out", fill: "both" },
+        {
+          duration: 700,
+          delay: context.reducedMotion ? 0 : index * 35,
+          easing: "ease-out",
+          fill: "both",
+        },
       );
     }
     return {
@@ -333,22 +397,29 @@ export const TRICK_EFFECTS = {
   "return-to-sender": (context) => {
     const { preview, posed } = choosePosePreview(context, "returned");
     const stamp = ownedArtifact(context, "trick-return-stamp");
-    const letterRect = context.view.letter.getBoundingClientRect();
     const landing = centerOf(preview.afterNo);
+    const rotationDelta = noMotionRotationDelta(preview);
     stamp.textContent = "RETURN TO SENDER";
-    stamp.style.setProperty("left", `${landing.x - letterRect.left}px`);
-    stamp.style.setProperty("top", `${landing.y - letterRect.top}px`);
+    stamp.style.setProperty("left", `${landing.x}px`);
+    stamp.style.setProperty("top", `${landing.y}px`);
     context.view.letter.append(stamp);
     const motionKeyframes: Keyframe[] = posed
       ? [
-        { transform: transformDelta(preview.beforeNo, preview.afterNo) },
-        { transform: "translate(-12px, 8px) rotate(-5deg)", offset: 0.72 },
-        { transform: "translate(0, 0)" },
+        { transform: noMotionTransform(preview, centerDelta(preview.beforeNo, preview.afterNo)) },
+        {
+          transform: noMotionTransform(
+            preview,
+            { x: -12, y: 8 },
+            rotationDelta * 0.28 - 5,
+          ),
+          offset: 0.72,
+        },
+        { transform: "translate(0, 0) rotate(0deg)" },
       ]
       : [
-        { transform: "translate(0, 0)" },
-        { transform: "translate(-5px, 3px) rotate(-3deg)" },
-        { transform: "translate(0, 0)" },
+        { transform: noMotionTransform(preview, { x: 0, y: 0 }) },
+        { transform: noMotionTransform(preview, { x: -5, y: 3 }, -3) },
+        { transform: "translate(0, 0) rotate(0deg)" },
       ];
     context.animate(context.view.noMotion, motionKeyframes, {
       duration: 900,
@@ -445,13 +516,17 @@ const LEGACY_TRICK_EFFECTS: Record<TrickId, LegacyTrickEffect> = {
     context.status.textContent = "NO would like to renegotiate over dessert.";
   },
   spotlight: (context) => {
+    const yesRect = context.yesButton.getBoundingClientRect();
+    const letterRect = context.letter.getBoundingClientRect();
+    const spotlightX = yesRect.left - letterRect.left + yesRect.width / 2;
+    const spotlightY = yesRect.top - letterRect.top + yesRect.height / 2;
     context.letter.style.setProperty(
       "--spotlight-x",
-      `${context.yesButton.offsetLeft + context.yesButton.offsetWidth / 2}px`,
+      `${spotlightX}px`,
     );
     context.letter.style.setProperty(
       "--spotlight-y",
-      `${context.yesButton.offsetTop + context.yesButton.offsetHeight / 2}px`,
+      `${spotlightY}px`,
     );
     replay(context.stage, "trick-spotlight", "spotlight");
     context.status.textContent = "A spotlight found the YES button.";

@@ -199,10 +199,14 @@ test("keeps the spotlight centered on YES after the buttons swap seats", async (
       x: coordinate(position[1]!, position[2]!, letter.clientWidth),
       y: coordinate(position[3]!, position[4]!, letter.clientHeight),
     };
-    const center = (button: HTMLButtonElement): { x: number; y: number } => ({
-      x: button.offsetLeft + button.offsetWidth / 2,
-      y: button.offsetTop + button.offsetHeight / 2,
-    });
+    const letterRect = letter.getBoundingClientRect();
+    const center = (button: HTMLButtonElement): { x: number; y: number } => {
+      const buttonRect = button.getBoundingClientRect();
+      return {
+        x: buttonRect.left - letterRect.left + buttonRect.width / 2,
+        y: buttonRect.top - letterRect.top + buttonRect.height / 2,
+      };
+    };
     const distance = (button: HTMLButtonElement): number => {
       const buttonCenter = center(button);
       return Math.hypot(spotlight.x - buttonCenter.x, spotlight.y - buttonCenter.y);

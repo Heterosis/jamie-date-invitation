@@ -2,8 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TRICK_IDS, type TrickId } from "../domain/trick-deck";
 import type { InvitationView } from "./invitation-view";
 import { TRICK_EFFECTS } from "./trick-effects";
-import type { Point, SpatialIntent, VisualPreview } from "./trick-geometry";
-import type { TrickEffectContext } from "./trick-runner";
+import type {
+  Point,
+  SpatialIntent,
+  TrickVisualController,
+  VisualPreview,
+} from "./trick-geometry";
+import { createTrickRunner, type TrickEffectContext } from "./trick-runner";
 import {
   applyTrickVisualPatch,
   INITIAL_TRICK_VISUAL_STATE,
@@ -40,6 +45,11 @@ class FakeStyle {
 
 class FakeDocument {
   readonly created: FakeElement[] = [];
+  animationFactory: ((
+    element: FakeElement,
+    keyframes: Keyframe[] | PropertyIndexedKeyframes,
+    options: KeyframeAnimationOptions,
+  ) => Animation) | null = null;
 
   createElement(_tagName: string): HTMLElement {
     const element = new FakeElement(this);
@@ -58,6 +68,23 @@ class FakeElement {
   className = "";
   textContent: string | null = "";
   parent: FakeElement | null = null;
+  removed = false;
+
+  readonly animate = vi.fn((
+    keyframes: Keyframe[] | PropertyIndexedKeyframes,
+    options: KeyframeAnimationOptions,
+  ): Animation => {
+    if (!this.ownerDocument.animationFactory) throw new Error("No animation factory configured");
+    return this.ownerDocument.animationFactory(this, keyframes, options);
+  });
+
+  readonly remove = vi.fn((): void => {
+    this.removed = true;
+    if (!this.parent) return;
+    const index = this.parent.children.indexOf(this);
+    if (index >= 0) this.parent.children.splice(index, 1);
+    this.parent = null;
+  });
 
   constructor(
     readonly ownerDocument: FakeDocument,
@@ -85,6 +112,8 @@ class FakeElement {
 }
 
 const SAFE_POSE: NoPose = Object.freeze({ centerX: 470, centerY: 500, rotation: -7 });
+const ROTATED_SAFE_POSE: NoPose = Object.freeze({ centerX: 600, centerY: 250, rotation: 7 });
+const PREVIOUS_ROTATED_POSE: NoPose = Object.freeze({ centerX: 404, centerY: 456, rotation: -4 });
 
 interface AnimationCall {
   readonly element: unknown;
@@ -108,6 +137,12 @@ function fakeEffectFixture(options: {
   readonly state?: Readonly<TrickVisualState>;
   readonly pose?: NoPose | null;
   readonly activation?: Point;
+  readonly reducedMotion?: boolean;
+  readonly letterRect?: DOMRectReadOnly;
+  readonly leftYes?: DOMRectReadOnly;
+  readonly rightYes?: DOMRectReadOnly;
+  readonly leftNo?: DOMRectReadOnly;
+  readonly rightNo?: DOMRectReadOnly;
 } = {}): EffectFixture {
   const document = new FakeDocument();
   const state = options.state ?? Object.freeze({
@@ -115,17 +150,17 @@ function fakeEffectFixture(options: {
     yesScale: 1.2,
     noScale: 0.9,
   });
-  const leftYes = rect(120, 430, 112, 52);
-  const rightYes = rect(348, 430, 112, 52);
-  const leftNo = rect(120, 430, 104, 52);
-  const rightNo = rect(352, 430, 104, 52);
+  const leftYes = options.leftYes ?? rect(120, 430, 112, 52);
+  const rightYes = options.rightYes ?? rect(348, 430, 112, 52);
+  const leftNo = options.leftNo ?? rect(120, 430, 104, 52);
+  const rightNo = options.rightNo ?? rect(352, 430, 104, 52);
   const beforeYes = state.swapped ? rightYes : leftYes;
   const beforeNo = state.swapped ? leftNo : rightNo;
 
   const element = (value = rect(0, 0, 100, 48)): FakeElement => new FakeElement(document, value);
   const elements = {
     stage: element(rect(0, 0, 760, 720)),
-    letter: element(rect(60, 80, 640, 580)),
+    letter: element(options.letterRect ?? rect(60, 80, 640, 580)),
     askingPanel: element(),
     actions: element(rect(100, 400, 500, 100)),
     yesSeat: element(beforeYes),
@@ -198,7 +233,7 @@ function fakeEffectFixture(options: {
     attempt: 3,
     state,
     activation: options.activation ?? { x: 310, y: 370 },
-    reducedMotion: false,
+    reducedMotion: options.reducedMotion ?? false,
     choosePose,
     preview,
     animate,
@@ -230,6 +265,61 @@ function keyframesOf(call: AnimationCall): Keyframe[] {
 function transformAt(keyframes: Keyframe[], index: number): string {
   const resolvedIndex = index < 0 ? keyframes.length + index : index;
   return String(keyframes[resolvedIndex]?.transform);
+}
+
+interface ParsedMotionTransform {
+  readonly x: number;
+  readonly y: number;
+  readonly rotation: number;
+}
+
+function parseMotionTransform(value: string): ParsedMotionTransform {
+  const translation = value.match(/translate\(\s*([^,]+),\s*([^)]+)\)/);
+  if (!translation) throw new Error(`Missing translate() in motion transform: ${value}`);
+  const rotation = value.match(/rotate\(\s*([-+\d.eE]+)deg\s*\)/);
+  return {
+    x: Number.parseFloat(translation[1]!),
+    y: Number.parseFloat(translation[2]!),
+    rotation: rotation ? Number.parseFloat(rotation[1]!) : 0,
+  };
+}
+
+function rotateVector(value: Point, degrees: number): Point {
+  const radians = degrees * Math.PI / 180;
+  return {
+    x: value.x * Math.cos(radians) - value.y * Math.sin(radians),
+    y: value.x * Math.sin(radians) + value.y * Math.cos(radians),
+  };
+}
+
+function centerDelta(from: DOMRectReadOnly, to: DOMRectReadOnly): Point {
+  return {
+    x: from.left + from.width / 2 - to.left - to.width / 2,
+    y: from.top + from.height / 2 - to.top - to.height / 2,
+  };
+}
+
+function expectMotionInLetterAxes(
+  transform: string,
+  targetRotation: number,
+  expectedLetterDelta: Point,
+  expectedLocalRotation?: number,
+): void {
+  const local = parseMotionTransform(transform);
+  const reconstructed = rotateVector(local, targetRotation);
+  expect(reconstructed.x).toBeCloseTo(expectedLetterDelta.x, 6);
+  expect(reconstructed.y).toBeCloseTo(expectedLetterDelta.y, 6);
+  if (expectedLocalRotation !== undefined) {
+    expect(local.rotation).toBeCloseTo(expectedLocalRotation, 6);
+  }
+}
+
+function expectSettledMotion(transform: string): void {
+  const settled = parseMotionTransform(transform);
+  expect(settled.x).toBeCloseTo(0, 8);
+  expect(settled.y).toBeCloseTo(0, 8);
+  expect(settled.rotation).toBeCloseTo(0, 8);
+  expect(transform).toContain("rotate(0deg)");
 }
 
 beforeEach(() => {
@@ -271,7 +361,7 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
     expect(motion).toBeDefined();
     const keyframes = keyframesOf(motion!);
     expect(keyframes.length).toBeGreaterThanOrEqual(3);
-    expect(transformAt(keyframes, -1)).toBe("translate(0, 0)");
+    expectSettledMotion(transformAt(keyframes, -1));
     expect(result.persistence).toBe("commit-target");
     expect(result.preview.target.noPose).toEqual(SAFE_POSE);
   });
@@ -305,7 +395,7 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
     expect(transformAt(keyframesOf(yesCall!), 0)).not.toBe("translate(0px, 0px)");
     expect(transformAt(keyframesOf(noCall!), 0)).not.toBe("translate(0px, 0px)");
     expect(transformAt(keyframesOf(yesCall!), -1)).toBe("translate(0, 0)");
-    expect(transformAt(keyframesOf(noCall!), -1)).toBe("translate(0, 0)");
+    expectSettledMotion(transformAt(keyframesOf(noCall!), -1));
     expect(result.preview.target.swapped).toBe(true);
     expect(result.persistence).toBe("commit-target");
   });
@@ -331,10 +421,12 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
         x: result.preview.afterNo.left + result.preview.afterNo.width / 2,
         y: result.preview.afterNo.top + result.preview.afterNo.height / 2,
       };
-      expect(transformAt(keyframes, 1)).toBe(
-        `translate(${yesCenter.x - targetCenter.x}px, ${yesCenter.y - targetCenter.y}px)`,
+      expectMotionInLetterAxes(
+        transformAt(keyframes, 1),
+        SAFE_POSE.rotation,
+        { x: yesCenter.x - targetCenter.x, y: yesCenter.y - targetCenter.y },
       );
-      expect(transformAt(keyframes, -1)).toBe("translate(0, 0)");
+      expectSettledMotion(transformAt(keyframes, -1));
       expect(result.preview.target.noPose).toEqual(SAFE_POSE);
       expect(result.persistence).toBe("commit-target");
     },
@@ -353,8 +445,138 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
     expect(result.persistence).toBe("commit-target");
   });
 
+  it("Runaway converts its two-hop arc into the rotated target seat axes", () => {
+    const state = Object.freeze({ ...INITIAL_TRICK_VISUAL_STATE, noPose: PREVIOUS_ROTATED_POSE });
+    const fixture = fakeEffectFixture({ state, pose: ROTATED_SAFE_POSE });
+    const result = TRICK_EFFECTS["runaway-rsvp"](fixture.context);
+    const motion = fixture.animationCalls.find((call) => call.element === fixture.elements.noMotion)!;
+    const keyframes = keyframesOf(motion);
+    const start = centerDelta(result.preview.beforeNo, result.preview.afterNo);
+
+    expectMotionInLetterAxes(
+      transformAt(keyframes, 0),
+      ROTATED_SAFE_POSE.rotation,
+      start,
+      PREVIOUS_ROTATED_POSE.rotation - ROTATED_SAFE_POSE.rotation,
+    );
+    expectMotionInLetterAxes(
+      transformAt(keyframes, 1),
+      ROTATED_SAFE_POSE.rotation,
+      { x: start.x * 0.66, y: start.y * 0.45 - 28 },
+    );
+    expectMotionInLetterAxes(
+      transformAt(keyframes, 2),
+      ROTATED_SAFE_POSE.rotation,
+      { x: start.x * 0.3, y: start.y * 0.16 - 12 },
+    );
+    expectSettledMotion(transformAt(keyframes, -1));
+  });
+
+  it("Seat Swap converts the NO FLIP delta into its rotated seat axes", () => {
+    const targetPose = Object.freeze({ centerX: 482, centerY: 286, rotation: 7 });
+    const state = Object.freeze({ ...INITIAL_TRICK_VISUAL_STATE, noPose: targetPose });
+    const fixture = fakeEffectFixture({
+      state,
+      leftNo: rect(120, 520, 104, 52),
+      rightNo: rect(430, 260, 104, 52),
+    });
+    const result = TRICK_EFFECTS["seat-swap"](fixture.context);
+    const motion = fixture.animationCalls.find((call) => call.element === fixture.elements.noMotion)!;
+    const keyframes = keyframesOf(motion);
+
+    expectMotionInLetterAxes(
+      transformAt(keyframes, 0),
+      targetPose.rotation,
+      centerDelta(result.preview.beforeNo, result.preview.afterNo),
+      0,
+    );
+    expectSettledMotion(transformAt(keyframes, -1));
+  });
+
+  it.each([false, true])(
+    "Cupid Magnet converts travel toward semantic YES when rotated and swapped=%s",
+    (swapped) => {
+      const state = Object.freeze({
+        ...INITIAL_TRICK_VISUAL_STATE,
+        noPose: PREVIOUS_ROTATED_POSE,
+        swapped,
+      });
+      const fixture = fakeEffectFixture({ state, pose: ROTATED_SAFE_POSE });
+      const result = TRICK_EFFECTS["cupid-magnet"](fixture.context);
+      const motion = fixture.animationCalls.find((call) => call.element === fixture.elements.noMotion)!;
+      const keyframes = keyframesOf(motion);
+      const targetCenter = {
+        x: result.preview.afterNo.left + result.preview.afterNo.width / 2,
+        y: result.preview.afterNo.top + result.preview.afterNo.height / 2,
+      };
+      const yesCenter = {
+        x: result.preview.beforeYes.left + result.preview.beforeYes.width / 2,
+        y: result.preview.beforeYes.top + result.preview.beforeYes.height / 2,
+      };
+
+      expectMotionInLetterAxes(
+        transformAt(keyframes, 0),
+        ROTATED_SAFE_POSE.rotation,
+        centerDelta(result.preview.beforeNo, result.preview.afterNo),
+        PREVIOUS_ROTATED_POSE.rotation - ROTATED_SAFE_POSE.rotation,
+      );
+      expectMotionInLetterAxes(
+        transformAt(keyframes, 1),
+        ROTATED_SAFE_POSE.rotation,
+        { x: yesCenter.x - targetCenter.x, y: yesCenter.y - targetCenter.y },
+      );
+      expectSettledMotion(transformAt(keyframes, -1));
+    },
+  );
+
+  it("Paper Plane converts its takeoff arc into the rotated target seat axes", () => {
+    const state = Object.freeze({ ...INITIAL_TRICK_VISUAL_STATE, noPose: PREVIOUS_ROTATED_POSE });
+    const fixture = fakeEffectFixture({ state, pose: ROTATED_SAFE_POSE });
+    const result = TRICK_EFFECTS["paper-plane"](fixture.context);
+    const motion = fixture.animationCalls.find((call) => call.element === fixture.elements.noMotion)!;
+    const keyframes = keyframesOf(motion);
+    const start = centerDelta(result.preview.beforeNo, result.preview.afterNo);
+
+    expectMotionInLetterAxes(
+      transformAt(keyframes, 0),
+      ROTATED_SAFE_POSE.rotation,
+      start,
+      PREVIOUS_ROTATED_POSE.rotation - ROTATED_SAFE_POSE.rotation,
+    );
+    expectMotionInLetterAxes(
+      transformAt(keyframes, 1),
+      ROTATED_SAFE_POSE.rotation,
+      { x: start.x * 0.45 + 70, y: start.y * 0.4 - 92 },
+    );
+    expectSettledMotion(transformAt(keyframes, -1));
+  });
+
+  it("Return to Sender converts its travel into the rotated target seat axes", () => {
+    const state = Object.freeze({ ...INITIAL_TRICK_VISUAL_STATE, noPose: PREVIOUS_ROTATED_POSE });
+    const fixture = fakeEffectFixture({ state, pose: ROTATED_SAFE_POSE });
+    const result = TRICK_EFFECTS["return-to-sender"](fixture.context);
+    const motion = fixture.animationCalls.find((call) => call.element === fixture.elements.noMotion)!;
+    const keyframes = keyframesOf(motion);
+
+    expectMotionInLetterAxes(
+      transformAt(keyframes, 0),
+      ROTATED_SAFE_POSE.rotation,
+      centerDelta(result.preview.beforeNo, result.preview.afterNo),
+      PREVIOUS_ROTATED_POSE.rotation - ROTATED_SAFE_POSE.rotation,
+    );
+    expectMotionInLetterAxes(
+      transformAt(keyframes, 1),
+      ROTATED_SAFE_POSE.rotation,
+      { x: -12, y: 8 },
+    );
+    expectSettledMotion(transformAt(keyframes, -1));
+  });
+
   it("Yes Garden tracks exactly eight decorative artifacts from letter-local activation", () => {
-    const fixture = fakeEffectFixture({ activation: { x: 310, y: 370 } });
+    const fixture = fakeEffectFixture({
+      activation: { x: 35, y: 70 },
+      letterRect: rect(160, 240, 640, 580),
+    });
     const result = TRICK_EFFECTS["yes-garden"](fixture.context);
 
     expect(fixture.preview).toHaveBeenCalledWith({});
@@ -364,11 +586,92 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
       expect(artifact.className).toBe("trick-garden-item");
       expect(artifact.dataset.trickArtifact).toBe("true");
       expect(artifact.getAttribute("aria-hidden")).toBe("true");
-      expect(artifact.style.getPropertyValue("--garden-x")).toBe("250px");
-      expect(artifact.style.getPropertyValue("--garden-y")).toBe("290px");
+      expect(artifact.style.getPropertyValue("--garden-x")).toBe("35px");
+      expect(artifact.style.getPropertyValue("--garden-y")).toBe("70px");
     }
     expect(result.preview.target).toEqual(fixture.context.state);
     expect(result.persistence).toBe("transient");
+  });
+
+  it("Yes Garden removes stagger so reduced-motion animations beat the 50ms deadline", () => {
+    const fullMotion = fakeEffectFixture({ reducedMotion: false });
+    const reducedMotion = fakeEffectFixture({ reducedMotion: true });
+
+    TRICK_EFFECTS["yes-garden"](fullMotion.context);
+    TRICK_EFFECTS["yes-garden"](reducedMotion.context);
+
+    expect(fullMotion.animationCalls.map(({ options }) => options.delay)).toEqual([
+      0, 35, 70, 105, 140, 175, 210, 245,
+    ]);
+    expect(reducedMotion.animationCalls.map(({ options }) => options.delay)).toEqual(
+      Array.from({ length: 8 }, () => 0),
+    );
+    const normalizedCompletionTimes = reducedMotion.animationCalls.map(({ options }) =>
+      Number(options.delay ?? 0) + 1 + Number(options.endDelay ?? 0));
+    expect(Math.max(...normalizedCompletionTimes)).toBeLessThan(50);
+  });
+
+  it("Yes Garden completes through the reduced-motion runner before fallback", async () => {
+    const fixture = fakeEffectFixture();
+    const animations: Array<{
+      readonly options: KeyframeAnimationOptions;
+      readonly animation: Animation;
+      readonly resolve: () => void;
+      readonly element: FakeElement;
+    }> = [];
+    fixture.document.animationFactory = (element, _keyframes, options) => {
+      let resolve!: () => void;
+      const finished = new Promise<void>((resolvePromise) => {
+        resolve = resolvePromise;
+      });
+      const animation = {
+        finished,
+        pause: vi.fn(),
+        play: vi.fn(),
+        cancel: vi.fn(),
+      } as unknown as Animation;
+      animations.push({ options, animation, resolve, element });
+      return animation;
+    };
+
+    let committed = fixture.context.state;
+    const visuals: TrickVisualController = {
+      get state() {
+        return committed;
+      },
+      choosePose: vi.fn(() => null),
+      preview: (patch) => fixture.context.preview(patch),
+      stage: vi.fn(),
+      commit: vi.fn((state) => {
+        committed = state;
+      }),
+      clearDisguise: vi.fn(),
+      setRefusalReady: vi.fn(),
+      revalidate: vi.fn(),
+      reset: vi.fn(),
+    };
+    const runner = createTrickRunner(fixture.context.view, TRICK_EFFECTS, {
+      visuals,
+      reducedMotion: () => true,
+    });
+
+    const run = runner.start("yes-garden", 1, { x: 35, y: 70 });
+
+    expect(animations).toHaveLength(8);
+    expect(animations.every(({ options }) => options.duration === 1)).toBe(true);
+    expect(animations.every(({ options }) => options.delay === 0)).toBe(true);
+    expect(vi.getTimerCount()).toBe(1);
+    animations.forEach(({ resolve }) => resolve());
+
+    await expect(run.finished).resolves.toEqual({ id: "yes-garden", outcome: "completed" });
+    expect(fixture.elements.status.textContent).toBe(
+      "A tiny garden of YES bloomed around the letter.",
+    );
+    expect(animations.every(({ animation }) => vi.mocked(animation.cancel).mock.calls.length === 1))
+      .toBe(true);
+    expect(animations.every(({ element }) => element.removed)).toBe(true);
+    expect(runner.busy).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("Dramatic Excuse owns a bubble without changing NO copy or semantic width", () => {
@@ -423,7 +726,7 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
   });
 
   it("Return to Sender persists a safe pose while its stamp stays runner-owned", () => {
-    const fixture = fakeEffectFixture();
+    const fixture = fakeEffectFixture({ letterRect: rect(160, 240, 640, 580) });
     const result = TRICK_EFFECTS["return-to-sender"](fixture.context);
 
     expect(fixture.choosePose).toHaveBeenCalledOnce();
@@ -434,6 +737,8 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
     expect(stamp?.className).toBe("trick-return-stamp");
     expect(stamp?.dataset.trickArtifact).toBe("true");
     expect(stamp?.getAttribute("aria-hidden")).toBe("true");
+    expect(stamp?.style.getPropertyValue("left")).toBe(`${SAFE_POSE.centerX}px`);
+    expect(stamp?.style.getPropertyValue("top")).toBe(`${SAFE_POSE.centerY}px`);
     expect(fixture.animationCalls.some(({ element }) => element === fixture.elements.noMotion)).toBe(true);
     expect(fixture.animationCalls.some(({ element }) => element === stamp)).toBe(true);
     expect(result.preview.target.noPose).toEqual(SAFE_POSE);
