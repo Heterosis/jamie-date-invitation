@@ -62,9 +62,9 @@ export function wireInvitation(
   };
 
   const resetRunner = (): boolean => {
+    refusalPublished = false;
     try {
       runner.reset();
-      refusalPublished = false;
       return true;
     } catch {
       view.status.textContent = terminalResetFailureMessage;
@@ -73,9 +73,9 @@ export function wireInvitation(
   };
 
   const recoverNoAttempt = (): void => {
+    refusalPublished = false;
     try {
       runner.reset();
-      refusalPublished = false;
       if (state.kind === "asking") {
         view.stage.dataset.attempts = String(state.attempts);
       }

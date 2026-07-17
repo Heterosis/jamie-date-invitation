@@ -734,6 +734,40 @@ describe("wireInvitation", () => {
     expect(fixture.view.successPanel.hidden).toBe(false);
   });
 
+  it("invalidates published refusal before a failed terminal reset", async () => {
+    const fixture = setupController({ resetFailures: 1 });
+    await completeAttempts(fixture);
+    expect(fixture.runner.setRefusalReady).toHaveBeenCalledTimes(1);
+    expect(fixture.view.noButton.dataset.locked).toBe("true");
+
+    click(fixture.view.yesButton);
+
+    expect(fixture.runner.reset).toHaveBeenCalledTimes(1);
+    expect(fixture.controller.getState()).toEqual({ kind: "asking", attempts: 8, canRefuse: true });
+    expect(fixture.view.successPanel.hidden).toBe(true);
+    expect(fixture.view.noButton.dataset.locked).toBeUndefined();
+    expect(fixture.view.noLabel.textContent).toBe("NO, SORRY");
+
+    click(fixture.view.noButton);
+    await flushTransaction();
+
+    expect(fixture.runner.setRefusalReady).toHaveBeenCalledTimes(2);
+    expect(fixture.view.noButton.dataset.locked).toBe("true");
+    expect(fixture.view.noLabel.textContent).toBe("Okay, I'll behave…");
+    expect(fixture.view.dialog.open).toBe(false);
+    expect(fixture.deck.next).toHaveBeenCalledTimes(8);
+    expect(fixture.runner.start).toHaveBeenCalledTimes(8);
+    expect(fixture.controller.getState()).toEqual({ kind: "asking", attempts: 8, canRefuse: true });
+
+    click(fixture.view.noButton);
+
+    expect(fixture.view.dialog.open).toBe(true);
+    expect(fixture.runner.setRefusalReady).toHaveBeenCalledTimes(2);
+    expect(fixture.deck.next).toHaveBeenCalledTimes(8);
+    expect(fixture.runner.start).toHaveBeenCalledTimes(8);
+    expect(fixture.controller.getState()).toEqual({ kind: "confirmingNo" });
+  });
+
   it("dispose tears down every listener and makes late completion and future events inert", async () => {
     const fixture = setupController();
     fixture.deferNextRun();
