@@ -1,17 +1,24 @@
 import { expect, test } from "@playwright/test";
-
-async function unlockRealNo(page: import("@playwright/test").Page): Promise<void> {
-  const no = page.locator("[data-no]");
-  for (let index = 0; index < 8; index += 1) await no.dispatchEvent("click");
-}
+import { unlockRealNo } from "./trick-helpers";
 
 async function seedResultTrickResidue(page: import("@playwright/test").Page): Promise<void> {
   await page.locator("[data-stage]").evaluate((stage) => {
-    stage.classList.add("trick-growing", "trick-swapped", "trick-spotlight");
-    const blossom = document.createElement("span");
-    blossom.className = "yes-blossom";
-    blossom.textContent = "YES";
-    stage.querySelector("[data-letter]")?.append(blossom);
+    stage.dataset.lastTrick = "spotlight";
+    stage.dataset.attempts = "4";
+    stage.setAttribute("data-swapped", "");
+    stage.setAttribute("data-disguised", "");
+    stage.querySelector<HTMLElement>("[data-yes-face]")!
+      .style.setProperty("--yes-scale", "1.4");
+    stage.querySelector<HTMLElement>("[data-no-face]")!
+      .style.setProperty("--no-scale", ".72");
+    stage.querySelector<HTMLElement>("[data-no-seat]")!
+      .style.setProperty("--no-pose-x", "45px");
+    const costume = stage.querySelector<HTMLElement>("[data-no-costume]")!;
+    costume.hidden = false;
+    costume.textContent = "🥸";
+    const artifact = document.createElement("span");
+    artifact.dataset.trickArtifact = "true";
+    stage.querySelector("[data-letter]")?.append(artifact);
   });
 }
 
@@ -123,11 +130,24 @@ test("success decorations do not cover desktop content or the Telegram action", 
 test("clears trick visuals before showing YES result actions in order", async ({ page }) => {
   await page.goto("/?to=Jamie&date=2026-08-08&time=19%3A30");
   await seedResultTrickResidue(page);
-  await page.locator("[data-yes]").dispatchEvent("click");
+  await page.locator("[data-yes]").click();
 
   const stage = page.locator("[data-stage]");
-  expect.soft(await stage.getAttribute("class")).not.toMatch(/trick-growing|trick-swapped|trick-spotlight/);
-  expect.soft(await stage.locator(".yes-blossom").count()).toBe(0);
+  await expect(stage).not.toHaveAttribute("data-swapped");
+  await expect(stage).not.toHaveAttribute("data-disguised");
+  await expect(stage).not.toHaveAttribute("data-last-trick");
+  await expect(stage).toHaveAttribute("data-attempts", "0");
+  await expect(stage.locator("[data-trick-artifact]")).toHaveCount(0);
+  const resetVisuals = await stage.evaluate((element) => ({
+    yesScale: element.querySelector<HTMLElement>("[data-yes-face]")!
+      .style.getPropertyValue("--yes-scale"),
+    noScale: element.querySelector<HTMLElement>("[data-no-face]")!
+      .style.getPropertyValue("--no-scale"),
+    noPoseX: element.querySelector<HTMLElement>("[data-no-seat]")!
+      .style.getPropertyValue("--no-pose-x"),
+    costume: element.querySelector<HTMLElement>("[data-no-costume]")!.textContent,
+  }));
+  expect.soft(resetVisuals).toEqual({ yesScale: "1", noScale: "1", noPoseX: "", costume: "" });
 
   const result = await stage.evaluate((element) => {
     const actions = element.querySelector<HTMLElement>(".result-actions")!;
@@ -153,14 +173,33 @@ test("clears trick visuals before showing YES result actions in order", async ({
   expect.soft(result.decorationBackground).toBe("none");
 });
 
-test("consumes the next click after a pointer-triggered trick", async ({ page }) => {
+test("cancels one busy trick when YES wins without a late rewrite", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto("/?to=Jamie&date=2026-08-08&time=19%3A30");
-  await page.locator("[data-no]").hover();
-  await page.locator("[data-yes]").dispatchEvent("click");
-  await expect(page.locator("[data-success]")).toBeHidden();
-  await page.waitForTimeout(700);
+  const stage = page.locator("[data-stage]");
+
+  await page.locator("[data-letter]").evaluate(async (letter) => {
+    await Promise.all(
+      letter.getAnimations().map((animation) => animation.finished.catch(() => undefined)),
+    );
+  });
+
+  await page.locator("[data-no]").dispatchEvent("click");
+  await expect(stage).toHaveAttribute("data-trick-busy", "true");
   await page.locator("[data-yes]").dispatchEvent("click");
   await expect(page.locator("[data-success]")).toBeVisible();
+  await expect(stage).toHaveAttribute("data-trick-busy", "false");
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  await expect(stage).not.toHaveAttribute("data-last-trick");
+  await expect(stage).toHaveAttribute("data-attempts", "0");
+  await expect(stage.locator("[data-trick-artifact]")).toHaveCount(0);
+
+  const terminalStatus = await page.getByRole("status").textContent();
+  await page.waitForTimeout(1_300);
+  await expect(page.getByRole("status")).toHaveText(terminalStatus!);
+  await expect(page.getByRole("heading", { name: "It's a date!" })).toHaveCount(1);
+  expect(pageErrors).toEqual([]);
 });
 
 test("accepts a genuine refusal only after the dramatic confirmation", async ({ page }) => {
@@ -184,8 +223,21 @@ test("clears trick visuals before showing the genuine NO result", async ({ page 
 
   const stage = page.locator("[data-stage]");
   await expect(page.getByRole("heading", { name: "No worries ♥" })).toBeVisible();
-  expect.soft(await stage.getAttribute("class")).not.toMatch(/trick-growing|trick-swapped|trick-spotlight/);
-  expect.soft(await stage.locator(".yes-blossom").count()).toBe(0);
+  await expect(stage).not.toHaveAttribute("data-swapped");
+  await expect(stage).not.toHaveAttribute("data-disguised");
+  await expect(stage).not.toHaveAttribute("data-last-trick");
+  await expect(stage).toHaveAttribute("data-attempts", "0");
+  await expect(stage.locator("[data-trick-artifact]")).toHaveCount(0);
+  const resetVisuals = await stage.evaluate((element) => ({
+    yesScale: element.querySelector<HTMLElement>("[data-yes-face]")!
+      .style.getPropertyValue("--yes-scale"),
+    noScale: element.querySelector<HTMLElement>("[data-no-face]")!
+      .style.getPropertyValue("--no-scale"),
+    noPoseX: element.querySelector<HTMLElement>("[data-no-seat]")!
+      .style.getPropertyValue("--no-pose-x"),
+    costume: element.querySelector<HTMLElement>("[data-no-costume]")!.textContent,
+  }));
+  expect.soft(resetVisuals).toEqual({ yesScale: "1", noScale: "1", noPoseX: "", costume: "" });
 });
 
 test("Actually, yes returns from confirmation to celebration", async ({ page }) => {

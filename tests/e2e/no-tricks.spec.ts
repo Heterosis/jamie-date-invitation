@@ -1,34 +1,51 @@
 import { expect, test } from "@playwright/test";
+import { activateNoAndWait, unlockRealNo, waitForTrickIdle } from "./trick-helpers";
 
 test("dispenses eight unique tricks before revealing real refusal", async ({ page }) => {
   await page.goto("/?to=Jamie");
   const no = page.locator("[data-no]");
+  const stage = page.locator("[data-stage]");
   const seen: string[] = [];
   for (let index = 0; index < 8; index += 1) {
-    await no.dispatchEvent("click");
-    const id = await page.locator("[data-stage]").getAttribute("data-last-trick");
+    await activateNoAndWait(page);
+    const id = await stage.getAttribute("data-last-trick");
     expect(id).not.toBeNull();
     seen.push(id!);
   }
   expect(new Set(seen).size).toBe(8);
+  await expect(stage).toHaveAttribute("data-attempts", "8");
   await expect(page.getByRole("button", { name: "Okay, I'll behave…" })).toBeVisible();
   await expect(page.locator("[data-success]")).toBeHidden();
+
+  const eighthTrick = await stage.getAttribute("data-last-trick");
+  await no.click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(stage).toHaveAttribute("data-last-trick", eighthTrick!);
+  await expect(stage).toHaveAttribute("data-attempts", "8");
 });
 
-test("accepts the first early mouse hover while throttling an immediate repeat", async ({ page }) => {
-  await page.addInitScript(() => {
-    Object.defineProperty(performance, "now", { configurable: true, value: () => 100 });
-  });
+test("keeps mouse hover cosmetic and does not start a trick transaction", async ({ page }) => {
   await page.goto("/?to=Jamie");
   const no = page.locator("[data-no]");
   const stage = page.locator("[data-stage]");
 
-  await no.dispatchEvent("pointerenter", { pointerType: "mouse" });
-  const firstTrick = await stage.getAttribute("data-last-trick");
-  expect(firstTrick).not.toBeNull();
+  await no.hover();
+  await page.waitForTimeout(250);
+  const hoverState = await no.evaluate((button) => {
+    const face = button.querySelector<HTMLElement>("[data-no-face]")!;
+    const values = getComputedStyle(face).translate.match(/-?\d*\.?\d+/g)?.map(Number) ?? [];
+    return {
+      faceTranslateY: values.length > 1 ? values[1]! : 0,
+      buttonTransform: getComputedStyle(button).transform,
+    };
+  });
 
-  await no.dispatchEvent("pointerenter", { pointerType: "mouse" });
-  await expect(stage).toHaveAttribute("data-last-trick", firstTrick!);
+  expect(hoverState.faceTranslateY).toBeCloseTo(-2, 1);
+  expect(hoverState.buttonTransform).toBe("none");
+  await expect(stage).toHaveAttribute("data-attempts", "0");
+  await expect(stage).not.toHaveAttribute("data-last-trick");
+  await expect(stage).toHaveAttribute("data-trick-busy", "false");
+  await expect(stage).toHaveAttribute("aria-busy", "false");
 });
 
 test("lifts the YES face without transforming its semantic button", async ({ page }) => {
@@ -108,20 +125,17 @@ test("paints the disguise emoji from renderer copy only", async ({ page }) => {
   expect(["none", "", "\"\"", "''"]).toContain(disguise.pseudoContent);
 });
 
-test("keeps legacy Growing scale on buttons while faces stay neutral", async ({ page }) => {
+test("keeps persistent Growing scale while cosmetic face hover still lifts", async ({ page }) => {
+  await page.addInitScript(() => { Math.random = () => 0.999; });
   await page.goto("/?to=Jamie");
   const stage = page.locator("[data-stage]");
   const yes = page.locator("[data-yes]");
 
-  await stage.evaluate((element) => {
-    element.classList.add("trick-growing");
-    element.querySelector<HTMLElement>("[data-yes]")!
-      .style.setProperty("--yes-scale", "1.2");
-    element.querySelector<HTMLElement>("[data-no]")!
-      .style.setProperty("--no-scale", ".8");
-  });
+  await activateNoAndWait(page);
+  await activateNoAndWait(page);
+  await expect(stage).toHaveAttribute("data-last-trick", "growing-feelings");
   await yes.hover();
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(250);
 
   const growing = await stage.evaluate((element) => {
     const yesButton = element.querySelector<HTMLElement>("[data-yes]")!;
@@ -147,19 +161,12 @@ test("keeps legacy Growing scale on buttons while faces stay neutral", async ({ 
     };
   });
 
-  expect(growing.yesButtonScaleX).toBeCloseTo(1.2, 2);
-  expect(growing.noButtonScaleX).toBeCloseTo(0.8, 2);
-  expect(growing.yesFaceScaleX).toBeCloseTo(1, 4);
-  expect(growing.noFaceScaleX).toBeCloseTo(1, 4);
-  expect(growing.yesFaceTranslateY).toBeCloseTo(0, 4);
+  expect(growing.yesButtonScaleX).toBeCloseTo(1, 4);
+  expect(growing.noButtonScaleX).toBeCloseTo(1, 4);
+  expect(growing.yesFaceScaleX).toBeGreaterThan(1);
+  expect(growing.noFaceScaleX).toBeLessThan(1);
+  expect(growing.yesFaceTranslateY).toBeCloseTo(-2, 1);
   expect(growing.noFaceTranslateY).toBeCloseTo(0, 4);
-
-  await page.mouse.move(0, 0);
-  await stage.evaluate((element) => {
-    element.classList.remove("trick-growing");
-    element.querySelector<HTMLElement>("[data-yes]")!.style.removeProperty("--yes-scale");
-    element.querySelector<HTMLElement>("[data-no]")!.style.removeProperty("--no-scale");
-  });
 });
 
 test("keeps the spotlight centered on YES after the buttons swap seats", async ({ page }) => {
@@ -173,54 +180,36 @@ test("keeps the spotlight centered on YES after the buttons swap seats", async (
   const no = page.locator("[data-no]");
   const stage = page.locator("[data-stage]");
 
-  await no.dispatchEvent("click");
+  await activateNoAndWait(page);
   await expect(stage).toHaveAttribute("data-last-trick", "seat-swap");
-  await no.dispatchEvent("click");
+  await expect(stage).toHaveAttribute("data-swapped", "");
+
+  await no.click();
   await expect(stage).toHaveAttribute("data-last-trick", "spotlight");
-  await expect(stage).toHaveClass(/trick-swapped/);
+  const overlay = page.locator(".trick-spotlight-overlay");
+  await expect(overlay).toBeAttached();
 
-  const focus = await stage.evaluate((element) => {
-    const letter = element.querySelector<HTMLElement>("[data-letter]")!;
-    const yes = element.querySelector<HTMLButtonElement>("[data-yes]")!;
-    const noButton = element.querySelector<HTMLButtonElement>("[data-no]")!;
-    const animation = letter
-      .getAnimations({ subtree: true })
-      .find((candidate) => (candidate as CSSAnimation).animationName === "spotlight");
-    animation?.pause();
-    if (animation) animation.currentTime = 450;
-
-    const background = getComputedStyle(letter, "::after").backgroundImage;
-    const position = background.match(/at\s+([\d.]+)(px|%)\s+([\d.]+)(px|%)/);
-    if (!position) throw new Error(`Unable to read spotlight position from: ${background}`);
-
-    const coordinate = (value: string, unit: string, size: number): number =>
-      unit === "%" ? Number.parseFloat(value) * size / 100 : Number.parseFloat(value);
-    const spotlight = {
-      x: coordinate(position[1]!, position[2]!, letter.clientWidth),
-      y: coordinate(position[3]!, position[4]!, letter.clientHeight),
-    };
+  const focus = await overlay.evaluate((spotlight) => {
+    const letter = spotlight.closest<HTMLElement>("[data-letter]")!;
+    const yes = letter.querySelector<HTMLButtonElement>("[data-yes]")!;
     const letterRect = letter.getBoundingClientRect();
-    const center = (button: HTMLButtonElement): { x: number; y: number } => {
-      const buttonRect = button.getBoundingClientRect();
-      return {
-        x: buttonRect.left - letterRect.left + buttonRect.width / 2,
-        y: buttonRect.top - letterRect.top + buttonRect.height / 2,
-      };
+    const yesRect = yes.getBoundingClientRect();
+    const expected = {
+      x: yesRect.left - letterRect.left + yesRect.width / 2,
+      y: yesRect.top - letterRect.top + yesRect.height / 2,
     };
-    const distance = (button: HTMLButtonElement): number => {
-      const buttonCenter = center(button);
-      return Math.hypot(spotlight.x - buttonCenter.x, spotlight.y - buttonCenter.y);
-    };
-
     return {
-      background,
-      yesDistance: distance(yes),
-      noDistance: distance(noButton),
+      x: Number.parseFloat(getComputedStyle(spotlight).getPropertyValue("--spotlight-x")),
+      y: Number.parseFloat(getComputedStyle(spotlight).getPropertyValue("--spotlight-y")),
+      expected,
     };
   });
 
-  expect(focus.yesDistance).toBeLessThan(focus.noDistance);
-  expect(focus.yesDistance).toBeLessThan(30);
+  expect(focus.x).toBeCloseTo(focus.expected.x, 1);
+  expect(focus.y).toBeCloseTo(focus.expected.y, 1);
+  await waitForTrickIdle(page);
+  await expect(overlay).toHaveCount(0);
+  await expect(stage).toHaveAttribute("data-swapped", "");
 });
 
 test("uses stable semantic buttons inside dedicated visual layers", async ({ page }) => {
@@ -266,14 +255,14 @@ test("uses stable semantic buttons inside dedicated visual layers", async ({ pag
       };
     };
     const before = { yes: center(yesSeat), no: center(noSeat) };
-    stage.classList.add("trick-swapped");
+    stage.setAttribute("data-swapped", "");
     const result = {
       before,
       after: { yes: center(yesSeat), no: center(noSeat) },
       yesOrder: getComputedStyle(yesSeat).order,
       noOrder: getComputedStyle(noSeat).order,
     };
-    stage.classList.remove("trick-swapped");
+    stage.removeAttribute("data-swapped");
     return result;
   });
 
@@ -292,8 +281,7 @@ test("uses stable semantic buttons inside dedicated visual layers", async ({ pag
   expect.soft(visuallyPrecedes(seatSwap.before.yes, seatSwap.before.no)).toBe(true);
   expect.soft(visuallyPrecedes(seatSwap.after.no, seatSwap.after.yes)).toBe(true);
 
-  const no = page.locator("[data-no]");
-  for (let index = 0; index < 8; index += 1) await no.dispatchEvent("click");
+  await unlockRealNo(page);
 
   const afterTricks = await page.locator("[data-actions]").evaluate((actions) => {
     const yes = actions.querySelector<HTMLButtonElement>("[data-yes]")!;

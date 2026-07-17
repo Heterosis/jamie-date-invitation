@@ -1,27 +1,34 @@
 import type { InvitationConfig } from "../domain/invitation-config";
 import { initialInvitationState, transition, type InvitationState } from "../domain/invitation-machine";
-import { createTrickDeck } from "../domain/trick-deck";
+import { createTrickDeck, type TrickDeck } from "../domain/trick-deck";
 import { buildGoogleCalendarAction } from "../integrations/google-calendar";
 import { buildTelegramAction } from "../integrations/telegram";
-import { applyTrick } from "./trick-effects";
+import { TRICK_EFFECTS } from "./trick-effects";
 import type { InvitationView } from "./invitation-view";
+import { createTrickRunner, type TrickRunner } from "./trick-runner";
 
-export interface InvitationController { getState(): InvitationState; }
+export interface InvitationDependencies {
+  readonly deck?: TrickDeck;
+  readonly runner?: TrickRunner;
+}
 
-export function wireInvitation(view: InvitationView, config: InvitationConfig): InvitationController {
-  const deck = createTrickDeck();
+export interface InvitationController {
+  getState(): InvitationState;
+  dispose(): void;
+}
+
+export function wireInvitation(
+  view: InvitationView,
+  config: InvitationConfig,
+  dependencies: InvitationDependencies = {},
+): InvitationController {
+  const deck = dependencies.deck ?? createTrickDeck();
+  const runner = dependencies.runner ?? createTrickRunner(view, TRICK_EFFECTS);
+  let transactionToken = 0;
+  let disposed = false;
   let state = transition(initialInvitationState, { type: "REVEAL" });
-  let lastPointerAttemptAt = Number.NEGATIVE_INFINITY;
-  let guardUntil = 0;
-
-  const cleanupResultTricks = (): void => {
-    view.stage.classList.remove("trick-growing", "trick-swapped", "trick-spotlight");
-    delete view.stage.dataset.lastTrick;
-    view.stage.querySelectorAll(".yes-blossom").forEach((blossom) => blossom.remove());
-  };
 
   const showSuccess = (): void => {
-    cleanupResultTricks();
     view.askingPanel.hidden = true;
     view.declinedPanel.hidden = true;
     view.successPanel.hidden = false;
@@ -44,7 +51,18 @@ export function wireInvitation(view: InvitationView, config: InvitationConfig): 
     window.setTimeout(() => view.successPanel.querySelector<HTMLElement>("h2")?.focus(), 50);
   };
 
+  const resetRunner = (): void => {
+    try {
+      runner.reset();
+    } catch {
+      // Reset completes its owned cancellation and cleanup before surfacing transition errors.
+    }
+  };
+
   const chooseYes = (): void => {
+    if (disposed) return;
+    transactionToken += 1;
+    resetRunner();
     state = state.kind === "confirmingNo"
       ? transition(state, { type: "ACTUALLY_YES" })
       : transition(state, { type: "YES" });
@@ -53,48 +71,63 @@ export function wireInvitation(view: InvitationView, config: InvitationConfig): 
     showSuccess();
   };
 
-  const attemptNo = (fromPointer = false): boolean => {
+  const attemptNo = async (event: MouseEvent): Promise<void> => {
+    if (disposed) return;
     if (state.kind === "confirmingNo") {
-      if (fromPointer || view.dialog.open) return false;
-      view.dialog.showModal();
-      return true;
+      if (!view.dialog.open) view.dialog.showModal();
+      return;
     }
-    if (state.kind !== "asking") return false;
+    if (state.kind !== "asking") return;
+
+    if (runner.busy) {
+      view.status.textContent = "One tiny trick at a time — let this one finish first.";
+      return;
+    }
+
+    runner.clearDisguise();
+
     if (state.canRefuse) {
-      if (fromPointer) return false;
       state = transition(state, { type: "REAL_NO" });
       if (state.kind === "confirmingNo") view.dialog.showModal();
-      return true;
+      return;
     }
-    if (fromPointer) {
-      const now = performance.now();
-      if (now - lastPointerAttemptAt < 350) return false;
-      lastPointerAttemptAt = now;
-    }
+
     const trick = deck.next();
     state = transition(state, { type: "NO_ATTEMPT" });
-    if (state.kind !== "asking") return false;
-    applyTrick(trick, {
-      stage: view.stage,
-      letter: view.letter,
-      yesButton: view.yesButton,
-      noButton: view.noButton,
-      status: view.status,
-      attempt: state.attempts,
-    });
+    if (state.kind !== "asking") return;
+
+    view.stage.dataset.attempts = String(state.attempts);
+    const token = ++transactionToken;
+    const buttonRect = view.noButton.getBoundingClientRect();
+    const letterRect = view.letter.getBoundingClientRect();
+    const activation = event.clientX || event.clientY
+      ? { x: event.clientX - letterRect.left, y: event.clientY - letterRect.top }
+      : {
+          x: buttonRect.left + buttonRect.width / 2 - letterRect.left,
+          y: buttonRect.top + buttonRect.height / 2 - letterRect.top,
+        };
+
+    const result = await runner.start(trick, state.attempts, activation).finished;
+    if (
+      disposed
+      || token !== transactionToken
+      || result.outcome === "cancelled"
+      || state.kind !== "asking"
+    ) return;
+
     if (state.canRefuse) {
       view.noButton.dataset.locked = "true";
-      view.noLabel.textContent = "Okay, I'll behave…";
-      view.noButton.setAttribute("aria-label", "Okay, I'll behave…");
+      runner.setRefusalReady(true);
       view.status.textContent = "A real refusal option is now available.";
     }
-    return true;
   };
 
   const confirmNo = (): void => {
+    if (disposed) return;
+    transactionToken += 1;
+    resetRunner();
     state = transition(state, { type: "CONFIRM_NO" });
     if (state.kind !== "declined") return;
-    cleanupResultTricks();
     view.dialog.close();
     view.askingPanel.hidden = true;
     view.successPanel.hidden = true;
@@ -104,19 +137,25 @@ export function wireInvitation(view: InvitationView, config: InvitationConfig): 
     window.setTimeout(() => view.declinedPanel.querySelector<HTMLElement>("h2")?.focus(), 50);
   };
 
-  view.stage.addEventListener("click", (event) => {
-    if (performance.now() >= guardUntil) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    guardUntil = 0;
-    view.status.textContent = "The buttons moved — choose again so your answer is unmistakable.";
-  }, true);
+  const noClick = (event: MouseEvent): void => {
+    void attemptNo(event);
+  };
+
   view.yesButton.addEventListener("click", chooseYes);
-  view.noButton.addEventListener("click", () => { attemptNo(false); });
-  view.noButton.addEventListener("pointerenter", (event) => {
-    if (event.pointerType === "mouse" && attemptNo(true)) guardUntil = performance.now() + 650;
-  });
+  view.noButton.addEventListener("click", noClick);
   view.actuallyYesButton.addEventListener("click", chooseYes);
   view.confirmNoButton.addEventListener("click", confirmNo);
-  return { getState: () => state };
+  return {
+    getState: () => state,
+    dispose(): void {
+      if (disposed) return;
+      disposed = true;
+      transactionToken += 1;
+      view.yesButton.removeEventListener("click", chooseYes);
+      view.noButton.removeEventListener("click", noClick);
+      view.actuallyYesButton.removeEventListener("click", chooseYes);
+      view.confirmNoButton.removeEventListener("click", confirmNo);
+      runner.dispose();
+    },
+  };
 }
