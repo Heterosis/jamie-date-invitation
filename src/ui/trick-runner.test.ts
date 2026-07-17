@@ -713,26 +713,64 @@ describe("createTrickRunner", () => {
     expectSettled(fixture.elements);
   });
 
-  it("reset surfaces a visual reset failure after completing cleanup", async () => {
+  it("reset commits the initial state when the specialized visual reset fails", async () => {
     const resetError = new Error("reset render failed");
     const completion = deferred<void>();
     const fixture = setupRunner({
       animation: fakeAnimation(completion.promise),
+      patch: { yesScale: 1.3, swapped: true, disguised: true },
       resetError,
-      artifactCount: 1,
+      artifactCount: 0,
     });
+    const run = fixture.runner.start("tiny-disguise", 3, { x: 3, y: 3 });
+    completion.resolve();
+    expect(await run.finished).toEqual({ id: "tiny-disguise", outcome: "completed" });
+    fixture.runner.setRefusalReady(true);
     fixture.elements.noButton.dataset.locked = "true";
-    const run = fixture.runner.start("seat-swap", 3, { x: 3, y: 3 });
+    const stray = new FakeElement();
+    stray.dataset.trickArtifact = "true";
+    fixture.elements.stage.append(stray);
 
-    expect(() => fixture.runner.reset()).toThrow(resetError);
+    expect(fixture.runner.visualState).not.toBe(INITIAL_TRICK_VISUAL_STATE);
+    expect(() => fixture.runner.reset()).not.toThrow();
 
-    expect(await run.finished).toEqual({ id: "seat-swap", outcome: "cancelled" });
-    expect(fixture.visuals.setRefusalReady).toHaveBeenCalledWith(false);
+    expect(fixture.runner.visualState).toBe(INITIAL_TRICK_VISUAL_STATE);
+    expect(fixture.visuals.setRefusalReady).toHaveBeenLastCalledWith(false);
     expect(fixture.visuals.reset).toHaveBeenCalledTimes(1);
-    expect(fixture.artifacts[0]?.remove).toHaveBeenCalledTimes(1);
+    expect(fixture.visuals.commit).toHaveBeenLastCalledWith(INITIAL_TRICK_VISUAL_STATE);
+    expect(stray.remove).toHaveBeenCalledTimes(1);
     expect(fixture.elements.stage.dataset.lastTrick).toBeUndefined();
     expect(fixture.elements.stage.dataset.attempts).toBe("0");
     expect(fixture.elements.noButton.dataset.locked).toBeUndefined();
+    expectSettled(fixture.elements);
+  });
+
+  it("reset surfaces the fallback error when neither visual reset path can establish initial state", async () => {
+    const resetError = new Error("specialized reset failed");
+    const fallbackError = new Error("initial commit failed");
+    const completion = deferred<void>();
+    let failInitialCommit = false;
+    const fixture = setupRunner({
+      animation: fakeAnimation(completion.promise),
+      patch: { yesScale: 1.3 },
+      resetError,
+      artifactCount: 0,
+      onCommit: (visualState) => {
+        if (failInitialCommit && visualState === INITIAL_TRICK_VISUAL_STATE) throw fallbackError;
+      },
+    });
+    const run = fixture.runner.start("growing-feelings", 4, { x: 4, y: 4 });
+    completion.resolve();
+    expect(await run.finished).toEqual({ id: "growing-feelings", outcome: "completed" });
+    failInitialCommit = true;
+
+    expect(() => fixture.runner.reset()).toThrow(fallbackError);
+
+    expect(fixture.runner.visualState).not.toBe(INITIAL_TRICK_VISUAL_STATE);
+    expect(fixture.visuals.reset).toHaveBeenCalledTimes(1);
+    expect(fixture.visuals.commit).toHaveBeenLastCalledWith(INITIAL_TRICK_VISUAL_STATE);
+    expect(fixture.elements.stage.dataset.lastTrick).toBeUndefined();
+    expect(fixture.elements.stage.dataset.attempts).toBe("0");
     expectSettled(fixture.elements);
   });
 
@@ -794,7 +832,7 @@ describe("createTrickRunner", () => {
     expectSettled(fixture.elements);
   });
 
-  it("dispose surfaces reset failure after listeners, frame, and metadata cleanup", async () => {
+  it("dispose falls back to the initial commit after listeners and frame cleanup", async () => {
     const resetError = new Error("dispose reset failed");
     const completion = deferred<void>();
     const fixture = setupRunner({
@@ -813,11 +851,13 @@ describe("createTrickRunner", () => {
     fixture.elements.stage.append(stray);
     fixture.window.emit("resize");
 
-    expect(() => fixture.runner.dispose()).toThrow(resetError);
+    expect(() => fixture.runner.dispose()).not.toThrow();
     expect(() => fixture.runner.dispose()).not.toThrow();
 
     expect(fixture.visuals.setRefusalReady).toHaveBeenLastCalledWith(false);
     expect(fixture.visuals.reset).toHaveBeenCalledTimes(1);
+    expect(fixture.visuals.commit).toHaveBeenLastCalledWith(INITIAL_TRICK_VISUAL_STATE);
+    expect(fixture.runner.visualState).toBe(INITIAL_TRICK_VISUAL_STATE);
     expect(fixture.visuals.refusalReady).toBe(false);
     expect(fixture.raf.cancel).toHaveBeenCalledTimes(1);
     expect(fixture.window.removedListeners).toEqual(["resize", "orientationchange"]);

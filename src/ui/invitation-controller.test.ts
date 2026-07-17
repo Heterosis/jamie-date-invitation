@@ -280,6 +280,8 @@ interface ControllerFixture {
 function setupController(options: {
   readonly ids?: readonly TrickId[];
   readonly clearDisguiseError?: Error;
+  readonly setRefusalReadyFailures?: number;
+  readonly resetFailures?: number;
 } = {}): ControllerFixture {
   vi.stubGlobal("location", { href: "https://example.test/invitation" });
   vi.stubGlobal("window", {
@@ -304,6 +306,8 @@ function setupController(options: {
   let busy = false;
   let manuallyBusy = false;
   let deferNext = false;
+  let remainingRefusalReadyFailures = options.setRefusalReadyFailures ?? 0;
+  let remainingResetFailures = options.resetFailures ?? 0;
   let visualState: Readonly<TrickVisualState> = INITIAL_TRICK_VISUAL_STATE;
   const runs: PendingRun[] = [];
 
@@ -351,6 +355,10 @@ function setupController(options: {
   });
   const setRefusalReady = vi.fn((ready: boolean): void => {
     callOrder.push(`refusal-${ready}`);
+    if (ready && remainingRefusalReadyFailures > 0) {
+      remainingRefusalReadyFailures -= 1;
+      throw new Error("refusal copy publication failed");
+    }
     if (ready) {
       view.noLabel.textContent = "Okay, I'll behave…";
       view.noButton.setAttribute("aria-label", "NO refusal option: Okay, I'll behave…");
@@ -368,6 +376,16 @@ function setupController(options: {
     callOrder.push("reset");
     busy = false;
     visualState = INITIAL_TRICK_VISUAL_STATE;
+    view.stage.dataset.attempts = "0";
+    delete view.noButton.dataset.locked;
+    view.stage.removeAttribute("data-disguised");
+    view.noLabel.textContent = "NO, SORRY";
+    view.noCostume.textContent = "";
+    view.noButton.setAttribute("aria-label", "NO, SORRY");
+    if (remainingResetFailures > 0) {
+      remainingResetFailures -= 1;
+      throw new Error("visual reset fallback failed");
+    }
   });
   const dispose = vi.fn((): void => {
     callOrder.push("dispose");
@@ -521,6 +539,38 @@ describe("wireInvitation", () => {
     expect(fixture.view.status.textContent).toBe("A real refusal option is now available.");
   });
 
+  it("retries failed refusal publication before accepting a later deliberate refusal", async () => {
+    const fixture = setupController({ setRefusalReadyFailures: 1 });
+
+    await completeAttempts(fixture);
+
+    expect(fixture.controller.getState()).toEqual({ kind: "asking", attempts: 8, canRefuse: true });
+    expect(fixture.runner.setRefusalReady).toHaveBeenCalledTimes(1);
+    expect(fixture.view.noButton.dataset.locked).toBeUndefined();
+    expect(fixture.view.dialog.open).toBe(false);
+    expect(fixture.view.status.textContent).toBe(
+      "The real refusal option needs another try. Please press NO again.",
+    );
+
+    click(fixture.view.noButton);
+    await flushTransaction();
+
+    expect(fixture.runner.setRefusalReady).toHaveBeenCalledTimes(2);
+    expect(fixture.view.noButton.dataset.locked).toBe("true");
+    expect(fixture.view.noLabel.textContent).toBe("Okay, I'll behave…");
+    expect(fixture.view.dialog.open).toBe(false);
+    expect(fixture.deck.next).toHaveBeenCalledTimes(8);
+    expect(fixture.runner.start).toHaveBeenCalledTimes(8);
+    expect(fixture.controller.getState()).toEqual({ kind: "asking", attempts: 8, canRefuse: true });
+
+    click(fixture.view.noButton);
+
+    expect(fixture.view.dialog.open).toBe(true);
+    expect(fixture.deck.next).toHaveBeenCalledTimes(8);
+    expect(fixture.runner.start).toHaveBeenCalledTimes(8);
+    expect(fixture.controller.getState()).toEqual({ kind: "confirmingNo" });
+  });
+
   it("opens confirmation after eight settled runs without drawing or starting a ninth", async () => {
     const fixture = setupController();
     await completeAttempts(fixture);
@@ -559,6 +609,37 @@ describe("wireInvitation", () => {
     expect(fixture.deck.next).toHaveBeenCalledTimes(1);
     expect(fixture.runner.start).toHaveBeenCalledTimes(1);
     expect(fixture.controller.getState()).toEqual({ kind: "asking", attempts: 1, canRefuse: false });
+  });
+
+  it("recovers an active disguise clear failure without consuming the retry", async () => {
+    const clearError = new Error("disguise render failed");
+    const fixture = setupController({
+      ids: ["tiny-disguise", "runaway-rsvp"],
+      clearDisguiseError: clearError,
+    });
+    click(fixture.view.noButton);
+    await flushTransaction();
+
+    click(fixture.view.noButton);
+    await flushTransaction();
+
+    expect(fixture.runner.clearDisguise).toHaveBeenCalledTimes(1);
+    expect(fixture.runner.reset).toHaveBeenCalledTimes(1);
+    expect(fixture.runner.visualState).toBe(INITIAL_TRICK_VISUAL_STATE);
+    expect(fixture.deck.next).toHaveBeenCalledTimes(1);
+    expect(fixture.runner.start).toHaveBeenCalledTimes(1);
+    expect(fixture.controller.getState()).toEqual({ kind: "asking", attempts: 1, canRefuse: false });
+    expect(fixture.view.stage.dataset.attempts).toBe("1");
+    expect(fixture.view.status.textContent).toBe(
+      "That tiny trick stumbled safely. Please try NO again.",
+    );
+
+    click(fixture.view.noButton);
+    await flushTransaction();
+
+    expect(fixture.deck.next).toHaveBeenCalledTimes(2);
+    expect(fixture.runner.start).toHaveBeenCalledTimes(2);
+    expect(fixture.controller.getState()).toEqual({ kind: "asking", attempts: 2, canRefuse: false });
   });
 
   it("lets genuine refusal copy win when Tiny Disguise is the deferred eighth run", async () => {
@@ -624,6 +705,35 @@ describe("wireInvitation", () => {
     expect(fixture.callOrder.filter((entry) => entry === "success-visible")).toHaveLength(1);
   });
 
+  it("aborts YES rendering when reset fails and lets a later choice retry", async () => {
+    const fixture = setupController({ resetFailures: 1 });
+    fixture.deferNextRun();
+    click(fixture.view.noButton);
+    await Promise.resolve();
+
+    click(fixture.view.yesButton);
+
+    expect(fixture.runner.reset).toHaveBeenCalledTimes(1);
+    expect(fixture.controller.getState()).toEqual({ kind: "asking", attempts: 1, canRefuse: false });
+    expect(fixture.view.askingPanel.hidden).toBe(false);
+    expect(fixture.view.successPanel.hidden).toBe(true);
+    expect(fixture.view.status.textContent).toBe(
+      "The invitation could not reset safely. Please try your choice again.",
+    );
+
+    fixture.resolveRun();
+    await flushTransaction();
+    expect(fixture.view.status.textContent).toBe(
+      "The invitation could not reset safely. Please try your choice again.",
+    );
+
+    click(fixture.view.yesButton);
+
+    expect(fixture.runner.reset).toHaveBeenCalledTimes(2);
+    expect(fixture.controller.getState()).toEqual({ kind: "celebrating" });
+    expect(fixture.view.successPanel.hidden).toBe(false);
+  });
+
   it("dispose tears down every listener and makes late completion and future events inert", async () => {
     const fixture = setupController();
     fixture.deferNextRun();
@@ -636,6 +746,7 @@ describe("wireInvitation", () => {
 
     expect(fixture.runner.dispose).toHaveBeenCalledTimes(1);
     expect(fixture.runner.reset).not.toHaveBeenCalled();
+    expect(fixture.view.letter.listenerCount("focusin")).toBe(0);
     expect(fixture.view.yesButton.listenerCount("click")).toBe(0);
     expect(fixture.view.noButton.listenerCount("click")).toBe(0);
     expect(fixture.view.actuallyYesButton.listenerCount("click")).toBe(0);
@@ -668,6 +779,30 @@ describe("wireInvitation", () => {
     expect(fixture.view.successPanel.hidden).toBe(true);
     expect(fixture.view.declinedPanel.hidden).toBe(false);
     expect(fixture.view.dialog.open).toBe(false);
+  });
+
+  it("keeps confirmation open when decline reset fails and lets confirmation retry", async () => {
+    const fixture = setupController({ resetFailures: 1 });
+    await completeAttempts(fixture);
+    click(fixture.view.noButton);
+
+    click(fixture.view.confirmNoButton);
+
+    expect(fixture.runner.reset).toHaveBeenCalledTimes(1);
+    expect(fixture.controller.getState()).toEqual({ kind: "confirmingNo" });
+    expect(fixture.view.dialog.open).toBe(true);
+    expect(fixture.view.askingPanel.hidden).toBe(false);
+    expect(fixture.view.declinedPanel.hidden).toBe(true);
+    expect(fixture.view.status.textContent).toBe(
+      "The invitation could not reset safely. Please try your choice again.",
+    );
+
+    click(fixture.view.confirmNoButton);
+
+    expect(fixture.runner.reset).toHaveBeenCalledTimes(2);
+    expect(fixture.controller.getState()).toEqual({ kind: "declined" });
+    expect(fixture.view.dialog.open).toBe(false);
+    expect(fixture.view.declinedPanel.hidden).toBe(false);
   });
 
   it("converts pointer coordinates to letter-local activation exactly once", async () => {

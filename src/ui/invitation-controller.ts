@@ -27,6 +27,16 @@ export function wireInvitation(
   let transactionToken = 0;
   let disposed = false;
   let state = transition(initialInvitationState, { type: "REVEAL" });
+  let refusalPublished = false;
+  const noAttemptFailureMessage = "That tiny trick stumbled safely. Please try NO again.";
+  const refusalPublicationFailureMessage =
+    "The real refusal option needs another try. Please press NO again.";
+  const terminalResetFailureMessage =
+    "The invitation could not reset safely. Please try your choice again.";
+
+  const markLetterArrived = (): void => {
+    view.letter.dataset.arrived = "true";
+  };
 
   const showSuccess = (): void => {
     view.askingPanel.hidden = true;
@@ -51,18 +61,49 @@ export function wireInvitation(
     window.setTimeout(() => view.successPanel.querySelector<HTMLElement>("h2")?.focus(), 50);
   };
 
-  const resetRunner = (): void => {
+  const resetRunner = (): boolean => {
     try {
       runner.reset();
+      refusalPublished = false;
+      return true;
     } catch {
-      // Reset completes its owned cancellation and cleanup before surfacing transition errors.
+      view.status.textContent = terminalResetFailureMessage;
+      return false;
     }
+  };
+
+  const recoverNoAttempt = (): void => {
+    try {
+      runner.reset();
+      refusalPublished = false;
+      if (state.kind === "asking") {
+        view.stage.dataset.attempts = String(state.attempts);
+      }
+    } catch {
+      // A later click can retry recovery without consuming another deck entry.
+    }
+    view.status.textContent = noAttemptFailureMessage;
+  };
+
+  const publishRefusalReady = (): boolean => {
+    try {
+      runner.setRefusalReady(true);
+    } catch {
+      delete view.noButton.dataset.locked;
+      view.status.textContent = refusalPublicationFailureMessage;
+      return false;
+    }
+    refusalPublished = true;
+    view.noButton.dataset.locked = "true";
+    view.status.textContent = "A real refusal option is now available.";
+    return true;
   };
 
   const chooseYes = (): void => {
     if (disposed) return;
+    markLetterArrived();
     transactionToken += 1;
-    resetRunner();
+    if (!resetRunner()) return;
     state = state.kind === "confirmingNo"
       ? transition(state, { type: "ACTUALLY_YES" })
       : transition(state, { type: "YES" });
@@ -84,9 +125,20 @@ export function wireInvitation(
       return;
     }
 
-    if (runner.visualState.disguised) runner.clearDisguise();
+    if (runner.visualState.disguised) {
+      try {
+        runner.clearDisguise();
+      } catch {
+        recoverNoAttempt();
+        return;
+      }
+    }
 
     if (state.canRefuse) {
+      if (!refusalPublished) {
+        publishRefusalReady();
+        return;
+      }
       state = transition(state, { type: "REAL_NO" });
       if (state.kind === "confirmingNo") view.dialog.showModal();
       return;
@@ -116,16 +168,14 @@ export function wireInvitation(
     ) return;
 
     if (state.canRefuse) {
-      view.noButton.dataset.locked = "true";
-      runner.setRefusalReady(true);
-      view.status.textContent = "A real refusal option is now available.";
+      publishRefusalReady();
     }
   };
 
   const confirmNo = (): void => {
     if (disposed) return;
     transactionToken += 1;
-    resetRunner();
+    if (!resetRunner()) return;
     state = transition(state, { type: "CONFIRM_NO" });
     if (state.kind !== "declined") return;
     view.dialog.close();
@@ -138,9 +188,13 @@ export function wireInvitation(
   };
 
   const noClick = (event: MouseEvent): void => {
-    void attemptNo(event);
+    markLetterArrived();
+    void attemptNo(event).catch(() => {
+      if (!disposed) view.status.textContent = noAttemptFailureMessage;
+    });
   };
 
+  view.letter.addEventListener("focusin", markLetterArrived);
   view.yesButton.addEventListener("click", chooseYes);
   view.noButton.addEventListener("click", noClick);
   view.actuallyYesButton.addEventListener("click", chooseYes);
@@ -151,6 +205,7 @@ export function wireInvitation(
       if (disposed) return;
       disposed = true;
       transactionToken += 1;
+      view.letter.removeEventListener("focusin", markLetterArrived);
       view.yesButton.removeEventListener("click", chooseYes);
       view.noButton.removeEventListener("click", noClick);
       view.actuallyYesButton.removeEventListener("click", chooseYes);

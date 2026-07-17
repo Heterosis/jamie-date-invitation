@@ -2,7 +2,7 @@
   gap: 24px;
 }
 
-.desk .letter:focus-within {
+.desk .letter[data-arrived="true"]:not(.is-celebrating) {
   animation: none;
 }
 

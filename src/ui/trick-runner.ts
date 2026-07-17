@@ -236,20 +236,32 @@ export function createTrickRunner(
   }
 
   function resetVisualAndMetadataState(): void {
-    let firstTransitionError: unknown;
-    let transitionFailed = false;
+    let refusalReadyCleared = false;
     try {
       visuals.setRefusalReady(false);
-    } catch (error) {
-      transitionFailed = true;
-      firstTransitionError = error;
+      refusalReadyCleared = true;
+    } catch {
+      // The specialized reset may still establish the full initial state.
     }
+    let initialStateEstablished = false;
+    let fallbackError: unknown;
     try {
       visuals.reset();
-    } catch (error) {
-      if (!transitionFailed) {
-        transitionFailed = true;
-        firstTransitionError = error;
+      initialStateEstablished = true;
+    } catch {
+      if (!refusalReadyCleared) {
+        try {
+          visuals.setRefusalReady(false);
+          refusalReadyCleared = true;
+        } catch (error) {
+          fallbackError = error;
+        }
+      }
+      try {
+        visuals.commit(INITIAL_TRICK_VISUAL_STATE);
+        initialStateEstablished = refusalReadyCleared;
+      } catch (error) {
+        fallbackError = error;
       }
     }
     cleanupArtifacts();
@@ -259,7 +271,7 @@ export function createTrickRunner(
     });
     safe(() => delete view.noButton.dataset.locked);
     setIdle();
-    if (transitionFailed) throw firstTransitionError;
+    if (!initialStateEstablished) throw fallbackError;
   }
 
   const queueRevalidation = (): void => {

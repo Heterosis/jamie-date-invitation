@@ -35,6 +35,24 @@ test("YES celebrates without opening external pages automatically", async ({ pag
   expect(new URL((await telegram.getAttribute("href"))!).pathname).toBe("/alex_date");
 });
 
+test("keeps the entrance settled after focus leaves an interacted letter", async ({ page }) => {
+  await page.goto("/?to=Jamie");
+  const letter = page.locator("[data-letter]");
+  const no = page.locator("[data-no]");
+  const status = page.locator("[data-status]");
+
+  await no.focus();
+  await no.dispatchEvent("click");
+  await status.evaluate((element) => {
+    element.tabIndex = -1;
+    element.focus();
+  });
+
+  await expect(status).toBeFocused();
+  await expect(letter).toHaveCSS("animation-name", "none");
+  await expect(letter).toHaveAttribute("data-arrived", "true");
+});
+
 test("success decorations do not cover desktop content or the Telegram action", async ({ page }, testInfo) => {
   test.skip(
     !testInfo.project.name.startsWith("desktop"),
