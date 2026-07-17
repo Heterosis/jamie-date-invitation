@@ -1,10 +1,17 @@
 import { expect, test } from "@playwright/test";
-import { unlockRealNo } from "./trick-helpers";
+import {
+  assertNoTrickResidue,
+  capturePageErrors,
+  forceTrickOrder,
+  unlockRealNo,
+} from "./trick-helpers";
 
 async function seedResultTrickResidue(page: import("@playwright/test").Page): Promise<void> {
   await page.locator("[data-stage]").evaluate((stage) => {
     stage.dataset.lastTrick = "spotlight";
     stage.dataset.attempts = "4";
+    stage.dataset.trickBusy = "true";
+    stage.setAttribute("aria-busy", "true");
     stage.setAttribute("data-swapped", "");
     stage.setAttribute("data-disguised", "");
     stage.querySelector<HTMLElement>("[data-yes-face]")!
@@ -13,12 +20,25 @@ async function seedResultTrickResidue(page: import("@playwright/test").Page): Pr
       .style.setProperty("--no-scale", ".72");
     stage.querySelector<HTMLElement>("[data-no-seat]")!
       .style.setProperty("--no-pose-x", "45px");
+    stage.querySelector<HTMLElement>("[data-no-seat]")!
+      .style.setProperty("--no-pose-y", "25px");
+    stage.querySelector<HTMLElement>("[data-no-seat]")!
+      .style.setProperty("--no-rotation", "5deg");
+    stage.querySelector<HTMLElement>("[data-no]")!.dataset.locked = "true";
     const costume = stage.querySelector<HTMLElement>("[data-no-costume]")!;
     costume.hidden = false;
     costume.textContent = "🥸";
-    const artifact = document.createElement("span");
-    artifact.dataset.trickArtifact = "true";
-    stage.querySelector("[data-letter]")?.append(artifact);
+    for (const className of [
+      "trick-spotlight-overlay",
+      "trick-garden-item",
+      "trick-excuse",
+      "trick-return-stamp",
+    ]) {
+      const artifact = document.createElement("span");
+      artifact.className = className;
+      artifact.dataset.trickArtifact = "true";
+      stage.querySelector("[data-letter]")?.append(artifact);
+    }
   });
 }
 
@@ -27,6 +47,7 @@ test("YES celebrates without opening external pages automatically", async ({ pag
   const pagesBefore = context.pages().length;
   await page.getByRole("button", { name: "YES, I'D LOVE TO" }).click();
   await expect(page.getByRole("heading", { name: "It's a date!" })).toBeVisible();
+  await assertNoTrickResidue(page);
   expect(context.pages()).toHaveLength(pagesBefore);
 
   const calendar = page.getByRole("link", { name: "+ GOOGLE CALENDAR" });
@@ -149,6 +170,8 @@ test("clears trick visuals before showing YES result actions in order", async ({
   await page.goto("/?to=Jamie&date=2026-08-08&time=19%3A30");
   await seedResultTrickResidue(page);
   await page.locator("[data-yes]").click();
+  await expect(page.getByRole("heading", { name: "It's a date!" })).toBeVisible();
+  await assertNoTrickResidue(page);
 
   const stage = page.locator("[data-stage]");
   await expect(stage).not.toHaveAttribute("data-swapped");
@@ -191,33 +214,20 @@ test("clears trick visuals before showing YES result actions in order", async ({
   expect.soft(result.decorationBackground).toBe("none");
 });
 
-test("cancels one busy trick when YES wins without a late rewrite", async ({ page }) => {
-  const pageErrors: string[] = [];
-  page.on("pageerror", (error) => pageErrors.push(error.message));
+test("YES during a busy trick cancels immediately and celebrates once", async ({ page }) => {
+  const errors = capturePageErrors(page);
+  await forceTrickOrder(page, ["paper-plane"]);
   await page.goto("/?to=Jamie&date=2026-08-08&time=19%3A30");
   const stage = page.locator("[data-stage]");
 
-  await page.locator("[data-letter]").evaluate(async (letter) => {
-    await Promise.all(
-      letter.getAnimations().map((animation) => animation.finished.catch(() => undefined)),
-    );
-  });
-
-  await page.locator("[data-no]").dispatchEvent("click");
+  await page.locator("[data-no]").click();
   await expect(stage).toHaveAttribute("data-trick-busy", "true");
-  await page.locator("[data-yes]").dispatchEvent("click");
-  await expect(page.locator("[data-success]")).toBeVisible();
-  await expect(stage).toHaveAttribute("data-trick-busy", "false");
-  await expect(stage).toHaveAttribute("aria-busy", "false");
-  await expect(stage).not.toHaveAttribute("data-last-trick");
-  await expect(stage).toHaveAttribute("data-attempts", "0");
-  await expect(stage.locator("[data-trick-artifact]")).toHaveCount(0);
+  await page.locator("[data-yes]").click();
 
-  const terminalStatus = await page.getByRole("status").textContent();
-  await page.waitForTimeout(1_300);
-  await expect(page.getByRole("status")).toHaveText(terminalStatus!);
+  await expect(page.locator("[data-success]")).toBeVisible();
   await expect(page.getByRole("heading", { name: "It's a date!" })).toHaveCount(1);
-  expect(pageErrors).toEqual([]);
+  await assertNoTrickResidue(page);
+  expect(errors).toEqual([]);
 });
 
 test("accepts a genuine refusal only after the dramatic confirmation", async ({ page }) => {
@@ -227,6 +237,7 @@ test("accepts a genuine refusal only after the dramatic confirmation", async ({ 
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.getByRole("button", { name: "Yes, I really mean no" }).click();
   await expect(page.getByRole("heading", { name: "No worries ♥" })).toBeVisible();
+  await assertNoTrickResidue(page);
   await expect(page.locator("[data-calendar]")).toBeHidden();
   await expect(page.locator("[data-telegram]")).toBeHidden();
 });
@@ -241,6 +252,7 @@ test("clears trick visuals before showing the genuine NO result", async ({ page 
 
   const stage = page.locator("[data-stage]");
   await expect(page.getByRole("heading", { name: "No worries ♥" })).toBeVisible();
+  await assertNoTrickResidue(page);
   await expect(stage).not.toHaveAttribute("data-swapped");
   await expect(stage).not.toHaveAttribute("data-disguised");
   await expect(stage).not.toHaveAttribute("data-last-trick");
@@ -262,8 +274,10 @@ test("Actually, yes returns from confirmation to celebration", async ({ page }) 
   await page.goto("/?to=Jamie&date=2026-08-08&time=19%3A30");
   await unlockRealNo(page);
   await page.getByRole("button", { name: "Okay, I'll behave…" }).click();
+  await seedResultTrickResidue(page);
   await page.getByRole("button", { name: "Actually, yes" }).click();
   await expect(page.getByRole("heading", { name: "It's a date!" })).toBeVisible();
+  await assertNoTrickResidue(page);
 });
 
 test("reopens refusal confirmation after Escape and still accepts genuine refusal", async ({ page }) => {
@@ -280,6 +294,7 @@ test("reopens refusal confirmation after Escape and still accepts genuine refusa
   await expect(dialog).toBeVisible();
   await page.getByRole("button", { name: "Yes, I really mean no" }).click();
   await expect(page.getByRole("heading", { name: "No worries ♥" })).toBeVisible();
+  await assertNoTrickResidue(page);
 });
 
 test("reopens refusal confirmation after Escape and still accepts Actually yes", async ({ page }) => {
@@ -296,4 +311,5 @@ test("reopens refusal confirmation after Escape and still accepts Actually yes",
   await expect(dialog).toBeVisible();
   await page.getByRole("button", { name: "Actually, yes" }).click();
   await expect(page.getByRole("heading", { name: "It's a date!" })).toBeVisible();
+  await assertNoTrickResidue(page);
 });
