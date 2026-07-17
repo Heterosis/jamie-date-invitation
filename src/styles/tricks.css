@@ -62,10 +62,8 @@
   border: 1px dashed #ac7b83;
 }
 
-.desk[data-disguised] [data-no-costume] { display: inline; }
-
-.desk[data-disguised] [data-no-costume]::before {
-  content: "🥸";
+.desk[data-disguised] [data-no-costume] {
+  display: inline;
   margin-inline-end: .35em;
 }
 
@@ -124,6 +122,13 @@
 .desk.trick-growing .button--yes:hover { transform: translateY(-2px) scale(var(--yes-scale, 1)); }
 .desk.trick-growing .button--no:hover { transform: translateY(-2px) scale(var(--no-scale, 1)); }
 .desk.trick-growing .button--yes, .desk.trick-growing .button--no { transition: transform .45s cubic-bezier(.2,.8,.2,1); }
+.desk.trick-growing [data-yes-face],
+.desk.trick-growing [data-no-face],
+.desk.trick-growing .choice-button:hover [data-yes-face],
+.desk.trick-growing .choice-button:hover [data-no-face] {
+  transform: none;
+  translate: none;
+}
 .desk.trick-swapped .button--yes { order: 2; }
 .desk.trick-swapped .button--no { order: 1; }
 .desk .trick-runaway { animation: runaway .72s cubic-bezier(.2,.8,.2,1); }

@@ -31,33 +31,135 @@ test("accepts the first early mouse hover while throttling an immediate repeat",
   await expect(stage).toHaveAttribute("data-last-trick", firstTrick!);
 });
 
-test("keeps the growing scale and normal lift while YES is hovered", async ({ page }) => {
-  await page.addInitScript(() => { Math.random = () => 0; });
+test("lifts the YES face without transforming its semantic button", async ({ page }) => {
   await page.goto("/?to=Jamie");
   const yes = page.locator("[data-yes]");
+  const stage = page.locator("[data-stage]");
 
+  const before = await yes.evaluate((button) => {
+    const face = button.querySelector<HTMLElement>("[data-yes-face]")!;
+    const buttonStyle = getComputedStyle(button);
+    const buttonMatrix = buttonStyle.transform === "none"
+      ? new DOMMatrixReadOnly()
+      : new DOMMatrixReadOnly(buttonStyle.transform);
+    const faceTranslate = getComputedStyle(face).translate;
+    const coordinates = faceTranslate.match(/-?\d*\.?\d+/g)?.map(Number) ?? [];
+    const stage = button.closest<HTMLElement>("[data-stage]")!;
+    return {
+      buttonScaleX: buttonMatrix.a,
+      buttonTranslateY: buttonMatrix.f,
+      faceTranslateY: coordinates.length > 1 ? coordinates[1]! : 0,
+      lastTrick: stage.getAttribute("data-last-trick"),
+      attempts: stage.getAttribute("data-attempts"),
+    };
+  });
   await yes.hover();
   await page.waitForTimeout(250);
-  const normalHover = await yes.evaluate((button) => {
-    const matrix = new DOMMatrixReadOnly(getComputedStyle(button).transform);
-    return { scaleX: matrix.a, translateY: matrix.f };
+  const hovered = await yes.evaluate((button) => {
+    const face = button.querySelector<HTMLElement>("[data-yes-face]")!;
+    const buttonStyle = getComputedStyle(button);
+    const buttonMatrix = buttonStyle.transform === "none"
+      ? new DOMMatrixReadOnly()
+      : new DOMMatrixReadOnly(buttonStyle.transform);
+    const faceTranslate = getComputedStyle(face).translate;
+    const coordinates = faceTranslate.match(/-?\d*\.?\d+/g)?.map(Number) ?? [];
+    const stage = button.closest<HTMLElement>("[data-stage]")!;
+    return {
+      buttonScaleX: buttonMatrix.a,
+      buttonTranslateY: buttonMatrix.f,
+      faceTranslateY: coordinates.length > 1 ? coordinates[1]! : 0,
+      lastTrick: stage.getAttribute("data-last-trick"),
+      attempts: stage.getAttribute("data-attempts"),
+    };
   });
-  expect(normalHover.scaleX).toBeCloseTo(1, 2);
-  expect(normalHover.translateY).toBeLessThan(-1);
 
-  await page.mouse.move(0, 0);
-  await page.locator("[data-no]").dispatchEvent("click");
-  await expect(page.locator("[data-stage]")).toHaveAttribute("data-last-trick", "growing-feelings");
-  await page.waitForTimeout(500);
+  expect(before.buttonScaleX).toBeCloseTo(1, 4);
+  expect(before.buttonTranslateY).toBeCloseTo(0, 4);
+  expect(before.faceTranslateY).toBeCloseTo(0, 4);
+  expect(hovered.buttonScaleX).toBeCloseTo(1, 4);
+  expect(hovered.buttonTranslateY).toBeCloseTo(0, 4);
+  expect(hovered.faceTranslateY).toBeCloseTo(-2, 1);
+  expect(hovered.lastTrick).toBe(before.lastTrick);
+  expect(hovered.attempts).toBe(before.attempts);
+  await expect(stage).not.toHaveAttribute("data-last-trick");
+});
+
+test("paints the disguise emoji from renderer copy only", async ({ page }) => {
+  await page.goto("/?to=Jamie");
+
+  const disguise = await page.locator("[data-stage]").evaluate((stage) => {
+    const costume = stage.querySelector<HTMLElement>("[data-no-costume]")!;
+    stage.setAttribute("data-disguised", "");
+    costume.hidden = false;
+    costume.textContent = "🥸";
+    const result = {
+      textContent: costume.textContent,
+      display: getComputedStyle(costume).display,
+      pseudoContent: getComputedStyle(costume, "::before").content,
+    };
+    costume.textContent = "";
+    costume.hidden = true;
+    stage.removeAttribute("data-disguised");
+    return result;
+  });
+
+  expect(disguise.textContent).toBe("🥸");
+  expect(disguise.display).not.toBe("none");
+  expect(["none", "", "\"\"", "''"]).toContain(disguise.pseudoContent);
+});
+
+test("keeps legacy Growing scale on buttons while faces stay neutral", async ({ page }) => {
+  await page.goto("/?to=Jamie");
+  const stage = page.locator("[data-stage]");
+  const yes = page.locator("[data-yes]");
+
+  await stage.evaluate((element) => {
+    element.classList.add("trick-growing");
+    element.querySelector<HTMLElement>("[data-yes]")!
+      .style.setProperty("--yes-scale", "1.2");
+    element.querySelector<HTMLElement>("[data-no]")!
+      .style.setProperty("--no-scale", ".8");
+  });
   await yes.hover();
   await page.waitForTimeout(500);
 
-  const growingHover = await yes.evaluate((button) => {
-    const matrix = new DOMMatrixReadOnly(getComputedStyle(button).transform);
-    return { scaleX: matrix.a, translateY: matrix.f };
+  const growing = await stage.evaluate((element) => {
+    const yesButton = element.querySelector<HTMLElement>("[data-yes]")!;
+    const noButton = element.querySelector<HTMLElement>("[data-no]")!;
+    const yesFace = element.querySelector<HTMLElement>("[data-yes-face]")!;
+    const noFace = element.querySelector<HTMLElement>("[data-no-face]")!;
+    const matrix = (target: HTMLElement): DOMMatrixReadOnly => {
+      const transform = getComputedStyle(target).transform;
+      return transform === "none" ? new DOMMatrixReadOnly() : new DOMMatrixReadOnly(transform);
+    };
+    const translateY = (target: HTMLElement): number => {
+      const value = getComputedStyle(target).translate;
+      const coordinates = value.match(/-?\d*\.?\d+/g)?.map(Number) ?? [];
+      return coordinates.length > 1 ? coordinates[1]! : 0;
+    };
+    return {
+      yesButtonScaleX: matrix(yesButton).a,
+      noButtonScaleX: matrix(noButton).a,
+      yesFaceScaleX: matrix(yesFace).a,
+      noFaceScaleX: matrix(noFace).a,
+      yesFaceTranslateY: translateY(yesFace),
+      noFaceTranslateY: translateY(noFace),
+    };
   });
-  expect(growingHover.scaleX).toBeGreaterThan(1.1);
-  expect(growingHover.translateY).toBeLessThan(-1);
+
+  expect(growing.yesButtonScaleX).toBeCloseTo(1.2, 2);
+  expect(growing.noButtonScaleX).toBeCloseTo(0.8, 2);
+  expect(growing.yesFaceScaleX).toBeCloseTo(1, 4);
+  expect(growing.noFaceScaleX).toBeCloseTo(1, 4);
+  expect(growing.yesFaceTranslateY).toBeCloseTo(0, 4);
+  expect(growing.noFaceTranslateY).toBeCloseTo(0, 4);
+
+  await page.mouse.move(0, 0);
+  await stage.evaluate((element) => {
+    element.classList.remove("trick-growing");
+    element.querySelector<HTMLElement>("[data-yes]")!.style.removeProperty("--yes-scale");
+    element.querySelector<HTMLElement>("[data-no]")!.style.removeProperty("--no-scale");
+  });
 });
 
 test("keeps the spotlight centered on YES after the buttons swap seats", async ({ page }) => {
