@@ -107,6 +107,17 @@ const SLOT_FACTORS = Object.freeze([
 ] as const);
 
 const ROTATIONS = Object.freeze([-7, 5, -4, 7, 0] as const);
+const LOCAL_MOVE_RADIUS = 32;
+const LOCAL_DIRECTIONS = Object.freeze([
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+  [Math.SQRT1_2, Math.SQRT1_2],
+  [-Math.SQRT1_2, Math.SQRT1_2],
+  [Math.SQRT1_2, -Math.SQRT1_2],
+  [-Math.SQRT1_2, -Math.SQRT1_2],
+] as const);
 const INTENT_SEED: Readonly<Record<SpatialIntent, number>> = Object.freeze({
   runaway: 0,
   magnet: 2,
@@ -130,6 +141,45 @@ function squaredDistance(first: Point, second: Point): number {
   return x * x + y * y;
 }
 
+function compareCandidates(
+  intent: SpatialIntent,
+  boundary: Rect,
+  current: Point,
+  currentYes: Point,
+  first: SlotCandidate,
+  second: SlotCandidate,
+): number {
+  let difference: number;
+  switch (intent) {
+    case "runaway":
+      difference = squaredDistance(second.point, current) - squaredDistance(first.point, current);
+      break;
+    case "magnet":
+      difference = squaredDistance(first.point, currentYes) - squaredDistance(second.point, currentYes);
+      break;
+    case "plane":
+      difference = Math.abs(second.point.x - current.x) - Math.abs(first.point.x - current.x);
+      break;
+    case "returned": {
+      const firstEdge = Math.min(
+        first.point.x - boundary.left,
+        boundary.right - first.point.x,
+        first.point.y - boundary.top,
+        boundary.bottom - first.point.y,
+      );
+      const secondEdge = Math.min(
+        second.point.x - boundary.left,
+        boundary.right - second.point.x,
+        second.point.y - boundary.top,
+        boundary.bottom - second.point.y,
+      );
+      difference = firstEdge - secondEdge;
+      break;
+    }
+  }
+  return difference || first.tieOrder - second.tieOrder;
+}
+
 export function chooseSafeNoPose(
   snapshot: GeometrySnapshot,
   query: PoseQuery,
@@ -150,37 +200,14 @@ export function chooseSafeNoPose(
   const rotated = [...slots.slice(offset), ...slots.slice(0, offset)]
     .map((candidate, tieOrder): SlotCandidate => ({ ...candidate, tieOrder }));
 
-  rotated.sort((first, second) => {
-    let difference: number;
-    switch (query.intent) {
-      case "runaway":
-        difference = squaredDistance(second.point, current) - squaredDistance(first.point, current);
-        break;
-      case "magnet":
-        difference = squaredDistance(first.point, currentYes) - squaredDistance(second.point, currentYes);
-        break;
-      case "plane":
-        difference = Math.abs(second.point.x - current.x) - Math.abs(first.point.x - current.x);
-        break;
-      case "returned": {
-        const firstEdge = Math.min(
-          first.point.x - boundary.left,
-          boundary.right - first.point.x,
-          first.point.y - boundary.top,
-          boundary.bottom - first.point.y,
-        );
-        const secondEdge = Math.min(
-          second.point.x - boundary.left,
-          boundary.right - second.point.x,
-          second.point.y - boundary.top,
-          boundary.bottom - second.point.y,
-        );
-        difference = firstEdge - secondEdge;
-        break;
-      }
-    }
-    return difference || first.tieOrder - second.tieOrder;
-  });
+  rotated.sort((first, second) => compareCandidates(
+    query.intent,
+    boundary,
+    current,
+    currentYes,
+    first,
+    second,
+  ));
 
   for (const [candidateIndex, candidate] of rotated.entries()) {
     const pose: NoPose = {
@@ -197,34 +224,30 @@ export function chooseSafeNoPose(
     }
   }
 
-  if (query.intent === "magnet") {
-    const towardYes = {
-      x: currentYes.x - current.x,
-      y: currentYes.y - current.y,
+  const localCandidates = LOCAL_DIRECTIONS.map(([x, y], tieOrder): SlotCandidate => ({
+    point: {
+      x: current.x + x * LOCAL_MOVE_RADIUS,
+      y: current.y + y * LOCAL_MOVE_RADIUS,
+    },
+    tieOrder,
+  }));
+  localCandidates.sort((first, second) => compareCandidates(
+    query.intent,
+    boundary,
+    current,
+    currentYes,
+    first,
+    second,
+  ));
+  for (const candidate of localCandidates) {
+    const pose: NoPose = {
+      centerX: candidate.point.x,
+      centerY: candidate.point.y,
+      rotation: query.currentRotation,
     };
-    const distanceToYes = Math.hypot(towardYes.x, towardYes.y);
-    if (distanceToYes > 0) {
-      const direction = {
-        x: towardYes.x / distanceToYes,
-        y: towardYes.y / distanceToYes,
-      };
-      const nudgeDirections = [
-        direction,
-        { x: -direction.y, y: direction.x },
-        { x: direction.y, y: -direction.x },
-        { x: -direction.x, y: -direction.y },
-      ] as const;
-      for (const nudge of nudgeDirections) {
-        const pose: NoPose = {
-          centerX: current.x + nudge.x * 32,
-          centerY: current.y + nudge.y * 32,
-          rotation: query.currentRotation,
-        };
-        if (Math.hypot(pose.centerX - current.x, pose.centerY - current.y) >= 24
-          && isSafeNoRect(snapshot, poseRect(pose, snapshot.noHitSize))) {
-          return pose;
-        }
-      }
+    if (Math.hypot(pose.centerX - current.x, pose.centerY - current.y) >= 24
+      && isSafeNoRect(snapshot, poseRect(pose, snapshot.noHitSize))) {
+      return pose;
     }
   }
 

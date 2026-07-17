@@ -162,62 +162,58 @@ describe("chooseSafeNoPose", () => {
     })).toBeNull();
   });
 
-  it("preserves a current pose when its rotated visual bounds are safe and alternates are blocked", () => {
-    const blockedCenters = [
-      [101.44, 510.52],
-      [498.56, 510.52],
-      [300, 533.8],
-      [154, 440.68],
-      [446, 440.68],
-      [78.08, 347.56],
-      [521.92, 347.56],
-      [300, 475.6],
-    ] as const;
+  it("preserves a safe origin when a narrow layout has no movable destination", () => {
     const snapshot = safeSnapshot({
-      currentNo: rect(278, 178, 44, 44),
+      letterPaddingBox: rect(0, 0, 60, 62),
+      viewport: { left: 0, right: 60 },
+      currentNo: rect(8, 10, 44, 44),
       yes: rect(100, 100, 44, 44),
-      protectedRects: blockedCenters.map(([x, y]) => rect(x - 1, y - 1, 2, 2)),
     });
 
     expect(chooseSafeNoPose(snapshot, {
       intent: "runaway",
       attempt: 0,
-      currentRotation: 3,
-    })).toEqual({ centerX: 300, centerY: 200, rotation: 3 });
-  });
-
-  it("nudges Magnet toward YES when fixed slots are blocked but nearby space is safe", () => {
-    const blockedCenters = [
-      [101.44, 510.52],
-      [498.56, 510.52],
-      [300, 533.8],
-      [154, 440.68],
-      [446, 440.68],
-      [78.08, 347.56],
-      [521.92, 347.56],
-      [300, 475.6],
-    ] as const;
-    const snapshot = safeSnapshot({
-      currentNo: rect(278, 328, 44, 44),
-      yes: rect(424, 328, 44, 44),
-      protectedRects: blockedCenters.map(([x, y]) => rect(x - 1, y - 1, 2, 2)),
-    });
-    const current = center(snapshot.currentNo);
-    const yes = center(snapshot.yes);
-
-    const pose = chooseSafeNoPose(snapshot, {
-      intent: "magnet",
-      attempt: 2,
       currentRotation: 0,
-    });
-
-    expect(pose).not.toBeNull();
-    expect(Math.hypot(pose!.centerX - current.x, pose!.centerY - current.y))
-      .toBeGreaterThanOrEqual(24);
-    expect(Math.hypot(pose!.centerX - yes.x, pose!.centerY - yes.y))
-      .toBeLessThan(Math.hypot(current.x - yes.x, current.y - yes.y));
-    expect(isSafeNoRect(snapshot, poseRect(pose!, snapshot.noHitSize))).toBe(true);
+    })).toEqual({ centerX: 30, centerY: 32, rotation: 0 });
   });
+
+  it.each(["runaway", "magnet", "plane", "returned"] as const)(
+    "nudges %s locally when fixed slots are blocked but nearby space is safe",
+    (intent) => {
+      const blockedCenters = [
+        [101.44, 510.52],
+        [498.56, 510.52],
+        [300, 533.8],
+        [154, 440.68],
+        [446, 440.68],
+        [78.08, 347.56],
+        [521.92, 347.56],
+        [300, 475.6],
+      ] as const;
+      const snapshot = safeSnapshot({
+        currentNo: rect(278, 328, 44, 44),
+        yes: rect(424, 328, 44, 44),
+        protectedRects: blockedCenters.map(([x, y]) => rect(x - 1, y - 1, 2, 2)),
+      });
+      const current = center(snapshot.currentNo);
+      const yes = center(snapshot.yes);
+
+      const pose = chooseSafeNoPose(snapshot, {
+        intent,
+        attempt: 2,
+        currentRotation: 0,
+      });
+
+      expect(pose).not.toBeNull();
+      expect(Math.hypot(pose!.centerX - current.x, pose!.centerY - current.y))
+        .toBeGreaterThanOrEqual(24);
+      if (intent === "magnet") {
+        expect(Math.hypot(pose!.centerX - yes.x, pose!.centerY - yes.y))
+          .toBeLessThan(Math.hypot(current.x - yes.x, current.y - yes.y));
+      }
+      expect(isSafeNoRect(snapshot, poseRect(pose!, snapshot.noHitSize))).toBe(true);
+    },
+  );
 });
 
 class StyleStub {
