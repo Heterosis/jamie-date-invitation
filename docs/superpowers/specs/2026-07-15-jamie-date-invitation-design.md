@@ -119,27 +119,18 @@ The label is uppercased for display, while the supplied name preserves its origi
 
 ## 6. The ten NO interactions
 
-The implementation uses a shuffle bag. All ten tricks are shuffled once; a trick cannot repeat until the bag is exhausted. The real-refusal control appears after eight tricks, so a visitor sees eight of the ten in a normal run. Reloading starts a new run.
+1. **Runaway RSVP**
+2. **Growing Feelings**
+3. **Seat Swap**
+4. **Cupid Magnet**
+5. **Paper Plane**
+6. **Yes Garden**
+7. **Dramatic Excuse**
+8. **Spotlight**
+9. **Tiny Disguise**
+10. **Return to Sender**
 
-1. **Runaway RSVP** — NO moves to another safe position when the pointer approaches.
-2. **Growing Feelings** — YES grows one step while NO becomes smaller.
-3. **Seat Swap** — YES and NO exchange visible positions before another click can be accepted.
-4. **Cupid Magnet** — NO drifts toward YES as if pulled by a heart magnet, then springs away.
-5. **Paper Plane** — NO folds into a paper plane, exits the letter, and returns elsewhere.
-6. **Yes Garden** — small YES flowers bloom around the controls while NO hides behind them.
-7. **Dramatic Excuse** — NO changes to a playful objection such as `But what if there's dessert?`.
-8. **Spotlight** — the letter dims while a soft spotlight highlights YES.
-9. **Tiny Disguise** — NO grows a moustache and temporarily reads `Definitely YES`.
-10. **Return to Sender** — NO receives a return-to-sender stamp and slides back toward the envelope.
-
-### 6.1 Consent and input rules
-
-- No trick may invoke the YES action by itself.
-- If labels or positions change, the previous pointer event is consumed. Jamie must perform a new activation on the currently visible YES control.
-- Actions are determined by stable semantic controls, not by stale coordinates.
-- Pointer proximity tricks become first-tap animations on touch devices.
-- Keyboard activation uses non-spatial versions of tricks and returns focus to a predictable control.
-- Controls never move after `pointerdown` and before `click` in a way that changes the resulting action.
+The click-only trigger contract, lifecycle architecture, persistent-state rules, revised behavior of all ten tricks, accessibility requirements, and geometry thresholds are defined by '2026-07-16-click-triggered-tricks-design.md', which supersedes the original pointer-proximity, first-tap touch, stale-click guard, and keyboard-specific trick behavior in this section.
 
 ## 7. URL configuration
 

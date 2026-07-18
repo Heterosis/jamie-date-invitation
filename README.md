@@ -42,7 +42,7 @@ Selecting YES only reveals the handoff buttons; it does not open a tab or send a
 
 For a direct Telegram target, a generated draft includes the invitation URL, while a custom `tgText` is used exactly as written and does not append that URL. Generic sharing always places the invitation URL in Telegram's separate `url` parameter and places the generated or custom draft in the `text` parameter.
 
-The first eight NO attempts use non-repeating playful tricks. After the eighth attempt, a genuine refusal option appears; Jamie must activate it and explicitly confirm once more before the refusal is accepted respectfully.
+The first eight deliberate NO activations each run one non-repeating playful trick. Hover is cosmetic and never counts. While one trick is moving, extra NO activations are ignored rather than queued, and YES remains available. After trick eight settles, a genuine refusal option appears; Jamie must activate it and explicitly confirm once more before the refusal is accepted respectfully.
 
 ## Verification
 
