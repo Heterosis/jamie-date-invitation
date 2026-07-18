@@ -725,14 +725,26 @@ export function createTrickVisualController(
     const previous = transitionElements.map((element) => (
       element.style.getPropertyValue("transition")
     ));
+    const faces = [elements.yesFace, elements.noFace] as const;
+    const previousFaceTranslate = faces.map((element) => (
+      element.style.getPropertyValue("translate")
+    ));
     transitionElements.forEach((element) => {
       element.style.setProperty("transition", "none");
+    });
+    faces.forEach((element) => {
+      element.style.setProperty("translate", "0 0");
     });
     return () => {
       transitionElements.forEach((element, index) => {
         const value = previous[index];
         if (value) element.style.setProperty("transition", value);
         else element.style.removeProperty("transition");
+      });
+      faces.forEach((element, index) => {
+        const value = previousFaceTranslate[index];
+        if (value) element.style.setProperty("translate", value);
+        else element.style.removeProperty("translate");
       });
     };
   }
@@ -804,13 +816,18 @@ export function createTrickVisualController(
     },
 
     choosePose(intent: SpatialIntent, attempt: number): NoPose | null {
-      render(committed);
-      const current = measure();
-      return chooseSafeNoPose(current.snapshot, {
-        intent,
-        attempt,
-        currentRotation: committed.noPose?.rotation ?? 0,
-      });
+      const restoreMotion = suppressTransitions();
+      try {
+        render(committed);
+        const current = measure();
+        return chooseSafeNoPose(current.snapshot, {
+          intent,
+          attempt,
+          currentRotation: committed.noPose?.rotation ?? 0,
+        });
+      } finally {
+        restoreMotion();
+      }
     },
 
     preview(patch: TrickVisualPatch): VisualPreview {

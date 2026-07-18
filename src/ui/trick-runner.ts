@@ -129,7 +129,11 @@ export function createTrickRunner(
   view.stage.setAttribute("aria-busy", "false");
 
   const visuals = options.visuals ?? defaultVisuals(view);
-  const readsReducedMotion = options.reducedMotion ?? (() => false);
+  const readsReducedMotion = options.reducedMotion ?? (() => (
+    typeof window !== "undefined"
+      && typeof window.matchMedia === "function"
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  ));
   const schedulesTimeout = options.setTimeout ?? globalThis.setTimeout;
   const clearsTimeout = options.clearTimeout ?? globalThis.clearTimeout;
   const schedulesFrame = options.requestAnimationFrame
@@ -408,6 +412,9 @@ export function createTrickRunner(
         record.targetState = result.preview.target;
         record.persistence = result.persistence;
         record.message = result.message;
+        safe(() => {
+          view.status.textContent = record.message;
+        });
         const deadlineMs = fallbackDelay(result.fallbackMs, reducedMotion);
 
         visuals.stage(record.targetState);

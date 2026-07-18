@@ -138,6 +138,21 @@ class FakeWindow extends EventTarget {
   readonly addedListeners: string[] = [];
   readonly removedListeners: string[] = [];
   readonly listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
+  readonly matchMedia: ReturnType<typeof vi.fn>;
+
+  constructor(reducedMotion = false) {
+    super();
+    this.matchMedia = vi.fn((query: string): MediaQueryList => ({
+      matches: reducedMotion && query === "(prefers-reduced-motion: reduce)",
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(() => true),
+    }));
+  }
 
   override addEventListener(
     type: string,
@@ -342,6 +357,7 @@ interface SetupOptions {
   readonly patch?: TrickVisualPatch;
   readonly fallbackMs?: number;
   readonly reducedMotion?: boolean;
+  readonly systemReducedMotion?: boolean;
   readonly artifactCount?: number;
   readonly effect?: TrickEffect;
   readonly onCommit?: (state: Readonly<TrickVisualState>) => void;
@@ -371,7 +387,7 @@ function setupRunner(options: SetupOptions = {}) {
     resetError: options.resetError,
   });
   const raf = fakeRaf(options.rafRequestFailures);
-  const fakeWindow = new FakeWindow();
+  const fakeWindow = new FakeWindow(options.systemReducedMotion);
   vi.stubGlobal("window", fakeWindow);
 
   const effect: TrickEffect = options.effect ?? ((context: TrickEffectContext) => {
@@ -406,7 +422,9 @@ function setupRunner(options: SetupOptions = {}) {
   ) as unknown as TrickRegistry;
   const runner = createTrickRunner(elements.view, registry, {
     visuals,
-    reducedMotion: () => options.reducedMotion ?? false,
+    ...(options.reducedMotion === undefined
+      ? {}
+      : { reducedMotion: () => options.reducedMotion! }),
     setTimeout: options.setTimeout,
     requestAnimationFrame: raf.request as typeof globalThis.requestAnimationFrame,
     cancelAnimationFrame: raf.cancel as typeof globalThis.cancelAnimationFrame,
@@ -467,6 +485,21 @@ describe("createTrickRunner", () => {
     expect(fixture.visuals.commit).toHaveBeenCalledWith(
       expect.objectContaining({ yesScale: 1.2 }),
     );
+    expectSettled(fixture.elements);
+  });
+
+  it("announces the trick message while its animation is still busy", async () => {
+    const completion = deferred<void>();
+    const fixture = setupRunner({ animation: fakeAnimation(completion.promise) });
+
+    const run = fixture.runner.start("runaway-rsvp", 1, { x: 3, y: 5 });
+    const busyWhileAnimationIsPending = fixture.runner.busy;
+    const statusWhileAnimationIsPending = fixture.elements.status.textContent;
+    run.cancel();
+    await run.finished;
+
+    expect(busyWhileAnimationIsPending).toBe(true);
+    expect(statusWhileAnimationIsPending).toBe("The full trick completed.");
     expectSettled(fixture.elements);
   });
 
@@ -664,6 +697,32 @@ describe("createTrickRunner", () => {
     expect(await run.finished).toEqual({ id: "tiny-disguise", outcome: "fallback" });
     expect(reduced.runner.visualState).toEqual(fullTarget);
     expectSettled(reduced.elements);
+  });
+
+  it("defaults Reduced Motion to the browser media preference", async () => {
+    const observedReducedMotion = vi.fn();
+    const fixture = setupRunner({
+      systemReducedMotion: true,
+      artifactCount: 0,
+      effect: (context) => {
+        observedReducedMotion(context.reducedMotion);
+        return {
+          message: "Reduced Motion observed.",
+          preview: context.preview({ yesScale: 1.1 }),
+          fallbackMs: 900,
+          persistence: "commit-target",
+        };
+      },
+    });
+
+    const run = fixture.runner.start("growing-feelings", 1, { x: 1, y: 2 });
+
+    expect(await run.finished).toEqual({ id: "growing-feelings", outcome: "completed" });
+    expect(fixture.window.matchMedia).toHaveBeenCalledWith(
+      "(prefers-reduced-motion: reduce)",
+    );
+    expect(observedReducedMotion).toHaveBeenCalledWith(true);
+    expectSettled(fixture.elements);
   });
 
   it("preparation error releases busy with a stable fallback", async () => {

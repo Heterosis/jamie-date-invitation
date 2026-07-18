@@ -58,6 +58,20 @@
   transition: translate .2s ease;
 }
 
+html[data-motion="reduced"] .desk :is(
+  [data-actions],
+  [data-yes-seat],
+  [data-no-seat],
+  [data-yes-motion],
+  [data-no-motion],
+  [data-yes],
+  [data-no],
+  [data-yes-face],
+  [data-no-face]
+) {
+  transition: none !important;
+}
+
 .desk .choice-button.button--yes .choice-face {
   color: #fff;
   background: var(--burgundy);
