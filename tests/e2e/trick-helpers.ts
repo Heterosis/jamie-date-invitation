@@ -72,6 +72,23 @@ export async function assertNoTrickResidue(page: Page): Promise<void> {
       const target = animation.effect instanceof KeyframeEffect
         ? animation.effect.target
         : null;
+      if (target instanceof HTMLElement) {
+        const runnerOwnedTarget = target.matches([
+          "[data-yes-seat]",
+          "[data-no-seat]",
+          "[data-yes-motion]",
+          "[data-no-motion]",
+          "[data-yes-face]",
+          "[data-no-face]",
+          "[data-trick-artifact]",
+        ].join(", "));
+        if (!runnerOwnedTarget) return [];
+        const cosmeticFaceHover = animation instanceof CSSTransition
+          && animation.transitionProperty === "translate"
+          && target.matches("[data-yes-face], [data-no-face]")
+          && target.style.getPropertyValue("translate") === "";
+        if (cosmeticFaceHover) return [];
+      }
       return [{
         playState: animation.playState,
         target: target instanceof HTMLElement
@@ -94,6 +111,8 @@ export async function assertNoTrickResidue(page: Page): Promise<void> {
       locked: Boolean(stage.querySelector("[data-no][data-locked]")),
       yesScale: yesFace.style.getPropertyValue("--yes-scale"),
       noScale: noFace.style.getPropertyValue("--no-scale"),
+      yesTranslate: yesFace.style.getPropertyValue("translate"),
+      noTranslate: noFace.style.getPropertyValue("translate"),
       noPoseX: noSeat.style.getPropertyValue("--no-pose-x"),
       noPoseY: noSeat.style.getPropertyValue("--no-pose-y"),
       noRotation: noSeat.style.getPropertyValue("--no-rotation"),
@@ -114,6 +133,8 @@ export async function assertNoTrickResidue(page: Page): Promise<void> {
     locked: false,
     yesScale: "1",
     noScale: "1",
+    yesTranslate: "",
+    noTranslate: "",
     noPoseX: "",
     noPoseY: "",
     noRotation: "",

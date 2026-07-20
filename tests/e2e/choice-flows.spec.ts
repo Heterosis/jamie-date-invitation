@@ -322,3 +322,14 @@ test("reopens refusal confirmation after Escape and still accepts Actually yes",
   await expect(page.getByRole("heading", { name: "It's a date!" })).toBeVisible();
   await assertNoTrickResidue(page);
 });
+
+test("residue assertion rejects a leftover inline face translation", async ({ page }) => {
+  await page.goto("/?to=Jamie");
+  await page.locator("[data-no-face]").evaluate((face) => {
+    face.style.setProperty("transition", "translate 60s linear");
+    void getComputedStyle(face).translate;
+    face.style.setProperty("translate", "8px 0");
+  });
+
+  await expect(assertNoTrickResidue(page)).rejects.toThrow();
+});
