@@ -44,6 +44,25 @@ For a direct Telegram target, a generated draft includes the invitation URL, whi
 
 The first eight deliberate NO activations each run one non-repeating playful trick. Hover is cosmetic and never counts. While one trick is moving, extra NO activations are ignored rather than queued, and YES remains available. After trick eight settles, a genuine refusal option appears; Jamie must activate it and explicitly confirm once more before the refusal is accepted respectfully.
 
+## NO trick catalog
+
+The app shuffles all ten tricks without replacement, then uses the first eight for that invitation. A mouse click, touch tap, or keyboard activation (`Enter` or `Space`) counts as one deliberate NO activation; hovering never triggers a trick. Persistent position, size, and seat changes compose safely instead of snapping back after each animation, while temporary decorations clean themselves up.
+
+| Trick | What happens | After the animation |
+| --- | --- | --- |
+| **Runaway RSVP** (`runaway-rsvp`) | NO makes a tiny two-hop escape. | NO keeps its new safe position. |
+| **Growing Feelings** (`growing-feelings`) | YES grows while NO becomes a little smaller. | Both new sizes remain. |
+| **Seat Swap** (`seat-swap`) | YES and NO exchange seats. | The swapped order remains. |
+| **Cupid Magnet** (`cupid-magnet`) | NO is pulled toward YES, then gently set down elsewhere. | NO keeps its new safe position. |
+| **Paper Plane** (`paper-plane`) | NO folds into a paper plane and flies across the letter. | It lands in a new safe position and stays there. |
+| **YES Garden** (`yes-garden`) | Tulips and tiny YES notes bloom around the activation point. | The garden fades away. |
+| **Dramatic Excuse** (`dramatic-excuse`) | NO produces a `BUT WHAT IF THERE'S DESSERT?` speech bubble. | The bubble fades without changing the button copy. |
+| **Spotlight** (`spotlight`) | A romantic spotlight finds the semantic YES button, even after Seat Swap. | The spotlight fades away. |
+| **Tiny Disguise** (`tiny-disguise`) | NO puts on a 🥸 disguise and claims `DEFINITELY YES`. | The disguise remains until the next accepted NO activation, then disappears before that activation continues. |
+| **Return to Sender** (`return-to-sender`) | NO receives a `RETURN TO SENDER` stamp and is sent to another landing spot. | The stamp clears; NO keeps its new safe position. |
+
+With Reduced Motion enabled, the same logical end states are preserved without the full travel animations.
+
 ## Verification
 
 ```powershell
