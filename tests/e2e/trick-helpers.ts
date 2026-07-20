@@ -38,6 +38,74 @@ export function capturePageErrors(page: Page): string[] {
   return errors;
 }
 
+export interface TrickAnimationTiming {
+  readonly count: number;
+  readonly maxDuration: number;
+}
+
+export async function seekTrickAnimations(
+  page: Page,
+  progress: number,
+): Promise<TrickAnimationTiming> {
+  await page.waitForFunction(() => document.getAnimations().some((animation) => {
+    if (typeof CSSTransition !== "undefined" && animation instanceof CSSTransition) return false;
+    const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
+    return target instanceof Element && Boolean(target.closest([
+      "[data-trick-artifact]",
+      "[data-no-motion]",
+      "[data-no-face]",
+      "[data-no-label]",
+      "[data-yes-face]",
+    ].join(", ")));
+  }));
+
+  return page.evaluate((fraction) => {
+    const durations: number[] = [];
+    for (const animation of document.getAnimations()) {
+      if (typeof CSSTransition !== "undefined" && animation instanceof CSSTransition) continue;
+      const effect = animation.effect;
+      if (!(effect instanceof KeyframeEffect)) continue;
+      const target = effect.target;
+      if (!(target instanceof Element) || !target.closest([
+        "[data-trick-artifact]",
+        "[data-no-motion]",
+        "[data-no-face]",
+        "[data-no-label]",
+        "[data-yes-face]",
+      ].join(", "))) continue;
+      const timing = effect.getTiming();
+      if (typeof timing.duration !== "number") continue;
+      animation.pause();
+      animation.currentTime = Number(timing.delay) + timing.duration * fraction;
+      durations.push(timing.duration);
+    }
+    return {
+      count: durations.length,
+      maxDuration: durations.length === 0 ? 0 : Math.max(...durations),
+    };
+  }, progress);
+}
+
+export async function resumeTrickAnimations(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    for (const animation of document.getAnimations()) {
+      if (animation.playState !== "paused") continue;
+      if (typeof CSSTransition !== "undefined" && animation instanceof CSSTransition) continue;
+      const effect = animation.effect;
+      if (!(effect instanceof KeyframeEffect)) continue;
+      const target = effect.target;
+      if (!(target instanceof Element) || !target.closest([
+        "[data-trick-artifact]",
+        "[data-no-motion]",
+        "[data-no-face]",
+        "[data-no-label]",
+        "[data-yes-face]",
+      ].join(", "))) continue;
+      animation.play();
+    }
+  });
+}
+
 export async function buttonIdentityToken(
   page: Page,
   choice: "yes" | "no",

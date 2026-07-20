@@ -348,7 +348,7 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
 
     expect(result.message.trim().length).toBeGreaterThan(0);
     expect(result.fallbackMs).toBeGreaterThan(0);
-    expect(result.fallbackMs).toBeLessThanOrEqual(1_200);
+    expect(result.fallbackMs).toBeLessThanOrEqual(2_300);
     expect(result.preview.previous).toEqual(context.state);
   });
 
@@ -621,6 +621,18 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
       expect(artifact.style.getPropertyValue("--garden-x")).toBe("35px");
       expect(artifact.style.getPropertyValue("--garden-y")).toBe("70px");
     }
+    expect(fixture.animationCalls.map(({ options }) => options.delay)).toEqual([
+      0, 45, 90, 135, 180, 225, 270, 315,
+    ]);
+    for (const call of fixture.animationCalls) {
+      const frames = keyframesOf(call);
+      expect(call.options.duration).toBe(1_800);
+      expect(frames[1]?.offset).toBe(0.25);
+      expect(frames[1]?.opacity).toBe(1);
+      expect(frames[2]?.offset).toBe(0.82);
+      expect(frames[2]?.opacity).toBe(1);
+    }
+    expect(result.fallbackMs).toBe(2_300);
     expect(result.preview.target).toEqual(fixture.context.state);
     expect(result.persistence).toBe("transient");
   });
@@ -633,7 +645,7 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
     TRICK_EFFECTS["yes-garden"](reducedMotion.context);
 
     expect(fullMotion.animationCalls.map(({ options }) => options.delay)).toEqual([
-      0, 35, 70, 105, 140, 175, 210, 245,
+      0, 45, 90, 135, 180, 225, 270, 315,
     ]);
     expect(reducedMotion.animationCalls.map(({ options }) => options.delay)).toEqual(
       Array.from({ length: 8 }, () => 0),
@@ -746,6 +758,27 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
     expect(result.persistence).toBe("transient");
   });
 
+  it.each([
+    ["dramatic-excuse", "trick-excuse", 1_800, 0.20, 0.84, 2_050],
+    ["spotlight", "trick-spotlight-overlay", 1_900, 0.18, 0.50, 2_150],
+    ["return-to-sender", "trick-return-stamp", 1_800, 0.22, 0.84, 2_050],
+  ] as const)(
+    "%s keeps its decoration through the approved hold window",
+    (id, className, duration, visibleAt, heldThrough, fallbackMs) => {
+      const fixture = fakeEffectFixture();
+      const result = TRICK_EFFECTS[id](fixture.context);
+      const artifact = fixture.trackedArtifacts.find((item) => item.className === className)!;
+      const animation = fixture.animationCalls.find(({ element }) => element === artifact)!;
+      const frames = keyframesOf(animation);
+
+      expect(animation.options.duration).toBe(duration);
+      expect(frames.some(({ offset, opacity }) => offset === visibleAt && opacity === 1)).toBe(true);
+      expect(frames.some(({ offset, opacity }) => offset === heldThrough && opacity === 1)).toBe(true);
+      expect(frames.at(-1)?.opacity).toBe(0);
+      expect(result.fallbackMs).toBe(fallbackMs);
+    },
+  );
+
   it("Tiny Disguise requests persistent disguise without a timer", () => {
     const context = fakeEffectContext();
     const result = TRICK_EFFECTS["tiny-disguise"](context);
@@ -771,8 +804,12 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
     expect(stamp?.getAttribute("aria-hidden")).toBe("true");
     expect(stamp?.style.getPropertyValue("left")).toBe(`${SAFE_POSE.centerX}px`);
     expect(stamp?.style.getPropertyValue("top")).toBe(`${SAFE_POSE.centerY}px`);
-    expect(fixture.animationCalls.some(({ element }) => element === fixture.elements.noMotion)).toBe(true);
-    expect(fixture.animationCalls.some(({ element }) => element === stamp)).toBe(true);
+    const noMotion = fixture.animationCalls.find(
+      ({ element }) => element === fixture.elements.noMotion,
+    )!;
+    const stampAnimation = fixture.animationCalls.find(({ element }) => element === stamp)!;
+    expect(noMotion.options.duration).toBe(900);
+    expect(stampAnimation.options.easing).toBe("ease-in-out");
     expect(result.preview.target.noPose).toEqual(SAFE_POSE);
     expect(result.persistence).toBe("commit-target");
   });
@@ -788,11 +825,11 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
     ["seat-swap", { swapped: true }, "commit-target", 900],
     ["cupid-magnet", { noPose: SAFE_POSE }, "commit-target", 1_050],
     ["paper-plane", { noPose: SAFE_POSE }, "commit-target", 1_200],
-    ["yes-garden", {}, "transient", 1_000],
-    ["dramatic-excuse", {}, "transient", 1_100],
-    ["spotlight", {}, "transient", 1_100],
+    ["yes-garden", {}, "transient", 2_300],
+    ["dramatic-excuse", {}, "transient", 2_050],
+    ["spotlight", {}, "transient", 2_150],
     ["tiny-disguise", { disguised: true }, "commit-target", 750],
-    ["return-to-sender", { noPose: SAFE_POSE }, "commit-target", 1_100],
+    ["return-to-sender", { noPose: SAFE_POSE }, "commit-target", 2_050],
   ] as const)(
     "%s owns only its declared persistent patch",
     (id, patch, persistence, fallbackMs) => {

@@ -279,14 +279,20 @@ export const TRICK_EFFECTS = {
       item.style.setProperty("--garden-x", `${origin.x}px`);
       item.style.setProperty("--garden-y", `${origin.y}px`);
       context.view.letter.append(item);
+      const bloomTransform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px)) scale(1)`;
       context.animate(
         item,
         [
           { opacity: 0, transform: "translate(-50%, -50%) scale(.2)" },
           {
             opacity: 1,
-            offset: 0.62,
-            transform: `translate(calc(-50% + ${x}px), calc(-50% + ${y}px)) scale(1)`,
+            offset: 0.25,
+            transform: bloomTransform,
+          },
+          {
+            opacity: 1,
+            offset: 0.82,
+            transform: bloomTransform,
           },
           {
             opacity: 0,
@@ -294,8 +300,8 @@ export const TRICK_EFFECTS = {
           },
         ],
         {
-          duration: 700,
-          delay: context.reducedMotion ? 0 : index * 35,
+          duration: 1_800,
+          delay: context.reducedMotion ? 0 : index * 45,
           easing: "ease-out",
           fill: "both",
         },
@@ -304,7 +310,7 @@ export const TRICK_EFFECTS = {
     return {
       message: "A tiny garden of YES bloomed around the letter.",
       preview,
-      fallbackMs: 1_000,
+      fallbackMs: 2_300,
       persistence: "transient",
     };
   },
@@ -322,16 +328,16 @@ export const TRICK_EFFECTS = {
       bubble,
       [
         { opacity: 0, transform: "translate(-50%, 8px)", scale: ".8" },
-        { opacity: 1, transform: "translate(-50%, -100%)", scale: "1", offset: 0.35 },
-        { opacity: 1, transform: "translate(-50%, -100%)", scale: "1", offset: 0.78 },
+        { opacity: 1, transform: "translate(-50%, -100%)", scale: "1", offset: 0.20 },
+        { opacity: 1, transform: "translate(-50%, -100%)", scale: "1", offset: 0.84 },
         { opacity: 0, transform: "translate(-50%, -110%)", scale: ".96" },
       ],
-      { duration: 900, easing: "ease-out", fill: "both" },
+      { duration: 1_800, easing: "ease-out", fill: "both" },
     );
     return {
       message: "NO would like to renegotiate over dessert.",
       preview,
-      fallbackMs: 1_100,
+      fallbackMs: 2_050,
       persistence: "transient",
     };
   },
@@ -352,13 +358,20 @@ export const TRICK_EFFECTS = {
     context.view.letter.append(overlay);
     context.animate(
       overlay,
-      [{ opacity: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 1, offset: 0.72 }, { opacity: 0 }],
-      { duration: 900, easing: "ease-in-out", fill: "both" },
+      [
+        { opacity: 0 },
+        { opacity: 1, offset: 0.18 },
+        { opacity: 1, offset: 0.50 },
+        { opacity: 0.65, offset: 0.74 },
+        { opacity: 0.28, offset: 0.90 },
+        { opacity: 0 },
+      ],
+      { duration: 1_900, easing: "ease-in-out", fill: "both" },
     );
     return {
       message: "A spotlight found the YES button.",
       preview,
-      fallbackMs: 1_100,
+      fallbackMs: 2_150,
       persistence: "transient",
     };
   },
@@ -419,15 +432,16 @@ export const TRICK_EFFECTS = {
       stamp,
       [
         { opacity: 0, rotate: "-15deg", scale: "1.8" },
-        { opacity: 1, rotate: "-8deg", scale: "1", offset: 0.42 },
-        { opacity: 1, rotate: "-8deg", scale: "1" },
+        { opacity: 1, rotate: "-8deg", scale: "1", offset: 0.22 },
+        { opacity: 1, rotate: "-8deg", scale: "1", offset: 0.84 },
+        { opacity: 0, rotate: "-8deg", scale: "1" },
       ],
-      { duration: 820, easing: "cubic-bezier(.2,.8,.2,1)", fill: "both" },
+      { duration: 1_800, easing: "ease-in-out", fill: "both" },
     );
     return {
       message: "NO was stamped RETURN TO SENDER.",
       preview,
-      fallbackMs: 1_100,
+      fallbackMs: 2_050,
       persistence: "commit-target",
     };
   },

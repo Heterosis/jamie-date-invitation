@@ -4,6 +4,8 @@ import {
   activateNoAndWait,
   buttonIdentityToken,
   forceTrickOrder,
+  resumeTrickAnimations,
+  seekTrickAnimations,
   waitForTrickIdle,
 } from "./trick-helpers";
 
@@ -262,6 +264,36 @@ for (const swapped of [false, true]) {
     }
   });
 }
+
+test.describe("long-lived decorative tricks", () => {
+  const cases = [
+    ["yes-garden", ".trick-garden-item", 8, 1_800],
+    ["dramatic-excuse", ".trick-excuse", 1, 1_800],
+    ["spotlight", ".trick-spotlight-overlay", 1, 1_900],
+    ["return-to-sender", ".trick-return-stamp", 1, 1_800],
+  ] as const satisfies readonly (readonly [TrickId, string, number, number])[];
+
+  for (const [id, selector, count, minimumDuration] of cases) {
+    test(`${id} holds its decoration before eventual cleanup`, async ({ page }) => {
+      await forceTrickOrder(page, [id]);
+      await page.goto("/?to=Jamie");
+      await settleLetter(page);
+
+      await page.locator("[data-no]").click();
+      const timing = await seekTrickAnimations(page, 0.55);
+      expect(timing.maxDuration).toBeGreaterThanOrEqual(minimumDuration);
+      await expect(page.locator(selector)).toHaveCount(count);
+      await expect.poll(async () => Number.parseFloat(await page.locator(selector).first().evaluate(
+        (element) => getComputedStyle(element).opacity,
+      ))).toBeGreaterThan(0.5);
+
+      await resumeTrickAnimations(page);
+      await waitForTrickIdle(page);
+      await expect(page.locator(selector)).toHaveCount(0);
+      await expect(page.locator("[data-trick-artifact]")).toHaveCount(0);
+    });
+  }
+});
 
 test("Garden owns and removes all of its temporary blooms", async ({ page }) => {
   await forceTrickOrder(page, ["yes-garden"]);
