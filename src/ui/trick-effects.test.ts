@@ -471,17 +471,37 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
       start,
       PREVIOUS_ROTATED_POSE.rotation - ROTATED_SAFE_POSE.rotation,
     );
+    expect(keyframes[1]?.offset).toBe(0.32);
     expectMotionInLetterAxes(
       transformAt(keyframes, 1),
       ROTATED_SAFE_POSE.rotation,
-      { x: start.x * 0.66, y: start.y * 0.45 - 28 },
+      { x: start.x * 0.78, y: start.y * 0.62 - 48 },
+      (PREVIOUS_ROTATED_POSE.rotation - ROTATED_SAFE_POSE.rotation) * 0.78,
     );
+    expect(keyframes[2]?.offset).toBe(0.68);
     expectMotionInLetterAxes(
       transformAt(keyframes, 2),
       ROTATED_SAFE_POSE.rotation,
-      { x: start.x * 0.3, y: start.y * 0.16 - 12 },
+      { x: start.x * 0.42, y: start.y * 0.28 - 30 },
+      (PREVIOUS_ROTATED_POSE.rotation - ROTATED_SAFE_POSE.rotation) * 0.42,
     );
     expectSettledMotion(transformAt(keyframes, -1));
+    expect(motion.options.duration).toBe(900);
+    expect(result.fallbackMs).toBe(1_100);
+  });
+
+  it("Runaway keeps the farther two-hop gesture when no safe pose exists", () => {
+    const fixture = fakeEffectFixture({ pose: null });
+    const result = TRICK_EFFECTS["runaway-rsvp"](fixture.context);
+    const motion = fixture.animationCalls.find(
+      ({ element }) => element === fixture.elements.noMotion,
+    )!;
+    const keyframes = keyframesOf(motion);
+
+    expectMotionInLetterAxes(transformAt(keyframes, 1), 0, { x: -12, y: -18 }, -4);
+    expectMotionInLetterAxes(transformAt(keyframes, 2), 0, { x: 12, y: -10 }, 4);
+    expectSettledMotion(transformAt(keyframes, -1));
+    expect(result.preview.target).toEqual(fixture.context.state);
   });
 
   it("Seat Swap converts the NO FLIP delta into its rotated seat axes", () => {
@@ -758,7 +778,7 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
   });
 
   it.each([
-    ["runaway-rsvp", { noPose: SAFE_POSE }, "commit-target", 900],
+    ["runaway-rsvp", { noPose: SAFE_POSE }, "commit-target", 1_100],
     [
       "growing-feelings",
       { yesScale: MAX_YES_SCALE, noScale: MIN_NO_FACE_SCALE },

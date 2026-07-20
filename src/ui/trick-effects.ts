@@ -87,38 +87,38 @@ export const TRICK_EFFECTS = {
       ? [
         { transform: noMotionTransform(preview, start) },
         {
-          offset: 0.38,
+          offset: 0.32,
           transform: noMotionTransform(
             preview,
-            { x: start.x * 0.66, y: start.y * 0.45 - 28 },
-            rotationDelta * 0.66,
+            { x: start.x * 0.78, y: start.y * 0.62 - 48 },
+            rotationDelta * 0.78,
           ),
         },
         {
-          offset: 0.72,
+          offset: 0.68,
           transform: noMotionTransform(
             preview,
-            { x: start.x * 0.3, y: start.y * 0.16 - 12 },
-            rotationDelta * 0.3,
+            { x: start.x * 0.42, y: start.y * 0.28 - 30 },
+            rotationDelta * 0.42,
           ),
         },
         { transform: "translate(0, 0) rotate(0deg)" },
       ]
       : [
         { transform: noMotionTransform(preview, { x: 0, y: 0 }) },
-        { transform: noMotionTransform(preview, { x: -6, y: -8 }, -2) },
-        { transform: noMotionTransform(preview, { x: 6, y: -4 }, 2) },
+        { transform: noMotionTransform(preview, { x: -12, y: -18 }, -4) },
+        { transform: noMotionTransform(preview, { x: 12, y: -10 }, 4) },
         { transform: "translate(0, 0) rotate(0deg)" },
       ];
     context.animate(context.view.noMotion, keyframes, {
-      duration: 760,
+      duration: 900,
       easing: "cubic-bezier(.2,.8,.2,1)",
       fill: "both",
     });
     return {
       message: "The NO button made a tiny two-hop escape.",
       preview,
-      fallbackMs: 900,
+      fallbackMs: 1_100,
       persistence: "commit-target",
     };
   },
