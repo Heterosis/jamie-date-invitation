@@ -26,7 +26,10 @@
 }
 
 .desk [data-yes-face] { transform: scale(var(--yes-scale, 1)); }
-.desk [data-no-face] { transform: scale(var(--no-scale, 1)); }
+.desk [data-no-face] {
+  position: relative;
+  transform: scale(var(--no-scale, 1));
+}
 
 .desk .choice-button:hover [data-yes-face],
 .desk .choice-button:hover [data-no-face] {
@@ -90,6 +93,26 @@ html[data-motion="reduced"] .desk :is(
 }
 
 .desk [data-trick-artifact] { pointer-events: none; }
+
+.trick-plane-fold {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  border-radius: inherit;
+  color: #9b6570;
+  pointer-events: none;
+}
+
+.trick-plane-crease {
+  position: absolute;
+  top: 50%;
+  left: 18%;
+  width: 64%;
+  border-top: 1px solid currentColor;
+  opacity: 0;
+  transform-origin: center;
+}
 
 .trick-excuse,
 .trick-return-stamp,

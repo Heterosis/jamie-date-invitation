@@ -114,6 +114,7 @@ class FakeElement {
 }
 
 const SAFE_POSE: NoPose = Object.freeze({ centerX: 470, centerY: 500, rotation: -7 });
+const LEFT_SAFE_POSE: NoPose = Object.freeze({ centerX: 250, centerY: 500, rotation: 5 });
 const ROTATED_SAFE_POSE: NoPose = Object.freeze({ centerX: 600, centerY: 250, rotation: 7 });
 const PREVIOUS_ROTATED_POSE: NoPose = Object.freeze({ centerX: 404, centerY: 456, rotation: -4 });
 
@@ -269,6 +270,12 @@ function transformAt(keyframes: Keyframe[], index: number): string {
   return String(keyframes[resolvedIndex]?.transform);
 }
 
+function polygonPointCount(value: unknown): number {
+  const match = String(value).match(/^polygon\((.*)\)$/);
+  if (!match) throw new Error(`Expected polygon clip path, received: ${String(value)}`);
+  return match[1]!.split(",").length;
+}
+
 interface ParsedMotionTransform {
   readonly x: number;
   readonly y: number;
@@ -292,6 +299,11 @@ function rotateVector(value: Point, degrees: number): Point {
     x: value.x * Math.cos(radians) - value.y * Math.sin(radians),
     y: value.x * Math.sin(radians) + value.y * Math.cos(radians),
   };
+}
+
+function letterAxesDelta(transform: string, targetRotation: number): Point {
+  const local = parseMotionTransform(transform);
+  return rotateVector(local, targetRotation);
 }
 
 function centerDelta(from: DOMRectReadOnly, to: DOMRectReadOnly): Point {
@@ -444,17 +456,120 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
     },
   );
 
-  it("Paper Plane owns its outer travel and face fold before landing safely", () => {
+  it("Paper Plane owns two crease layers and folds before direction-aware flight", () => {
     const fixture = fakeEffectFixture();
     const result = TRICK_EFFECTS["paper-plane"](fixture.context);
 
-    expect(fixture.choosePose).toHaveBeenCalledOnce();
     expect(fixture.choosePose).toHaveBeenCalledWith("plane");
-    expect(fixture.preview).toHaveBeenCalledWith({ noPose: SAFE_POSE });
-    expect(fixture.animationCalls.some(({ element }) => element === fixture.elements.noMotion)).toBe(true);
-    expect(fixture.animationCalls.some(({ element }) => element === fixture.elements.noFace)).toBe(true);
+    expect(fixture.trackArtifact).toHaveBeenCalledOnce();
+    const [fold] = fixture.trackedArtifacts;
+    expect(fold?.className).toBe("trick-plane-fold");
+    expect(fold?.getAttribute("aria-hidden")).toBe("true");
+    expect(fixture.elements.noFace.children).toContain(fold);
+    expect(fold?.children.map(({ className }) => className)).toEqual([
+      "trick-plane-crease trick-plane-crease--one",
+      "trick-plane-crease trick-plane-crease--two",
+    ]);
+    const [creaseOne, creaseTwo] = fold!.children;
+
+    const motion = fixture.animationCalls.find(({ element }) => element === fixture.elements.noMotion)!;
+    const face = fixture.animationCalls.find(({ element }) => element === fixture.elements.noFace)!;
+    const label = fixture.animationCalls.find(({ element }) => element === fixture.elements.noLabel)!;
+    const motionFrames = keyframesOf(motion);
+    const faceFrames = keyframesOf(face);
+    const labelFrames = keyframesOf(label);
+    expect(faceFrames.every(({ clipPath }) => polygonPointCount(clipPath) === 4)).toBe(true);
+    expect(motionFrames[1]?.offset).toBe(0.30);
+    expect(transformAt(motionFrames, 1)).toBe(transformAt(motionFrames, 0));
+    expect(motionFrames[3]?.offset).toBe(0.80);
+    expectSettledMotion(transformAt(motionFrames, 3));
+    expectSettledMotion(transformAt(motionFrames, -1));
+    expect(faceFrames[1]).toMatchObject({
+      offset: 0.16,
+      clipPath: "polygon(0 14%, 100% 0, 100% 100%, 0 86%)",
+    });
+    expect(faceFrames[2]?.offset).toBe(0.30);
+    expect(faceFrames[3]?.offset).toBe(0.80);
+    expect(faceFrames[2]?.clipPath).toBe("polygon(0 0, 100% 50%, 0 100%, 24% 50%)");
+    expect(faceFrames[3]?.clipPath).toBe(faceFrames[2]?.clipPath);
+    expect(faceFrames[1]?.clipPath).not.toBe(faceFrames[2]?.clipPath);
+    expect(faceFrames[4]).toMatchObject({
+      offset: 0.90,
+      clipPath: faceFrames[1]?.clipPath,
+    });
+    expect(faceFrames.at(-1)).toMatchObject({
+      clipPath: "polygon(0 0, 100% 0, 100% 100%, 0 100%)",
+      borderRadius: "999px",
+      rotate: "0deg",
+      scale: "1",
+    });
+    expect(labelFrames[1]).toMatchObject({ offset: 0.28, opacity: 0 });
+    expect(labelFrames[2]).toMatchObject({ offset: 0.82, opacity: 0 });
+    expect(labelFrames.at(-1)).toMatchObject({ opacity: 1, scale: "1" });
+    const creaseAnimations = [creaseOne, creaseTwo].map((crease) => (
+      fixture.animationCalls.find(({ element }) => element === crease)!
+    ));
+    const creaseOneFrames = keyframesOf(creaseAnimations[0]!);
+    const creaseTwoFrames = keyframesOf(creaseAnimations[1]!);
+    expect(creaseOneFrames[1]).toMatchObject({ offset: 0.18, opacity: 1 });
+    expect(creaseOneFrames[2]).toMatchObject({ offset: 0.80, opacity: 1 });
+    expect(creaseOneFrames[3]).toMatchObject({ offset: 0.90, opacity: 0 });
+    expect(creaseTwoFrames[2]).toMatchObject({ offset: 0.30, opacity: 1 });
+    expect(creaseTwoFrames[3]).toMatchObject({ offset: 0.80, opacity: 1 });
+    for (const creaseAnimation of creaseAnimations) {
+      expect(creaseAnimation.options.duration).toBe(1_500);
+      expect(creaseAnimation.options.easing).toBe("cubic-bezier(.3,.1,.2,1)");
+      expect(creaseAnimation.options.fill).toBe("both");
+      expect(keyframesOf(creaseAnimation).at(-1)).toMatchObject({
+        opacity: 0,
+        rotate: "0deg",
+      });
+    }
+    expect(motion.options.duration).toBe(1_500);
+    expect(face.options.duration).toBe(1_500);
+    expect(label.options.duration).toBe(1_500);
+    expect(result.fallbackMs).toBe(1_750);
     expect(result.preview.target.noPose).toEqual(SAFE_POSE);
-    expect(result.persistence).toBe("commit-target");
+  });
+
+  it.each([
+    ["right", SAFE_POSE, 1, "polygon(0 0, 100% 50%, 0 100%, 24% 50%)"],
+    ["left", LEFT_SAFE_POSE, -1, "polygon(100% 0, 0 50%, 100% 100%, 76% 50%)"],
+  ] as const)("Paper Plane points %s along its actual flight", (_name, pose, direction, polygon) => {
+    const fixture = fakeEffectFixture({ pose });
+    const result = TRICK_EFFECTS["paper-plane"](fixture.context);
+    const start = centerDelta(result.preview.beforeNo, result.preview.afterNo);
+    const motion = fixture.animationCalls.find(({ element }) => element === fixture.elements.noMotion)!;
+    const face = fixture.animationCalls.find(({ element }) => element === fixture.elements.noFace)!;
+
+    const motionFrames = keyframesOf(motion);
+    expect(keyframesOf(face)[2]?.clipPath).toBe(polygon);
+    expectMotionInLetterAxes(
+      transformAt(motionFrames, 2),
+      pose.rotation,
+      { x: start.x * 0.42, y: start.y * 0.36 - 96 },
+    );
+    const horizontal = motionFrames.map((_, index) => (
+      letterAxesDelta(transformAt(motionFrames, index), pose.rotation).x
+    ));
+    for (let index = 1; index < horizontal.length; index += 1) {
+      expect(direction * (horizontal[index]! - horizontal[index - 1]!))
+        .toBeGreaterThanOrEqual(-1e-6);
+    }
+    expectSettledMotion(transformAt(motionFrames, -1));
+  });
+
+  it("Paper Plane uses a vertical fold-and-hop when no safe pose exists", () => {
+    const fixture = fakeEffectFixture({ pose: null });
+    TRICK_EFFECTS["paper-plane"](fixture.context);
+    const motion = fixture.animationCalls.find(
+      ({ element }) => element === fixture.elements.noMotion,
+    )!;
+    const motionFrames = keyframesOf(motion);
+
+    expect(transformAt(motionFrames, 1)).toBe(transformAt(motionFrames, 0));
+    expectMotionInLetterAxes(transformAt(motionFrames, 2), 0, { x: 0, y: -36 });
+    expectSettledMotion(transformAt(motionFrames, 3));
   });
 
   it("Runaway converts its two-hop arc into the rotated target seat axes", () => {
@@ -561,26 +676,33 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
     },
   );
 
-  it("Paper Plane converts its takeoff arc into the rotated target seat axes", () => {
+  it("Paper Plane converts its delayed arc into rotated target-seat axes", () => {
     const state = Object.freeze({ ...INITIAL_TRICK_VISUAL_STATE, noPose: PREVIOUS_ROTATED_POSE });
     const fixture = fakeEffectFixture({ state, pose: ROTATED_SAFE_POSE });
     const result = TRICK_EFFECTS["paper-plane"](fixture.context);
     const motion = fixture.animationCalls.find((call) => call.element === fixture.elements.noMotion)!;
-    const keyframes = keyframesOf(motion);
+    const frames = keyframesOf(motion);
     const start = centerDelta(result.preview.beforeNo, result.preview.afterNo);
+    const rotationDelta = PREVIOUS_ROTATED_POSE.rotation - ROTATED_SAFE_POSE.rotation;
+    const direction = 1;
 
     expectMotionInLetterAxes(
-      transformAt(keyframes, 0),
+      transformAt(frames, 0),
       ROTATED_SAFE_POSE.rotation,
       start,
-      PREVIOUS_ROTATED_POSE.rotation - ROTATED_SAFE_POSE.rotation,
+      rotationDelta,
     );
+    expect(frames[1]?.offset).toBe(0.30);
+    expect(transformAt(frames, 1)).toBe(transformAt(frames, 0));
     expectMotionInLetterAxes(
-      transformAt(keyframes, 1),
+      transformAt(frames, 2),
       ROTATED_SAFE_POSE.rotation,
-      { x: start.x * 0.45 + 70, y: start.y * 0.4 - 92 },
+      { x: start.x * 0.42, y: start.y * 0.36 - 96 },
+      rotationDelta * 0.38 - direction * 18,
     );
-    expectSettledMotion(transformAt(keyframes, -1));
+    expect(frames[3]?.offset).toBe(0.80);
+    expectSettledMotion(transformAt(frames, 3));
+    expectSettledMotion(transformAt(frames, -1));
   });
 
   it("Return to Sender converts its travel into the rotated target seat axes", () => {
@@ -824,7 +946,7 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
     ],
     ["seat-swap", { swapped: true }, "commit-target", 900],
     ["cupid-magnet", { noPose: SAFE_POSE }, "commit-target", 1_050],
-    ["paper-plane", { noPose: SAFE_POSE }, "commit-target", 1_200],
+    ["paper-plane", { noPose: SAFE_POSE }, "commit-target", 1_750],
     ["yes-garden", {}, "transient", 2_300],
     ["dramatic-excuse", {}, "transient", 2_050],
     ["spotlight", {}, "transient", 2_150],

@@ -78,6 +78,41 @@ function ownedArtifact(context: TrickEffectContext, className: string): HTMLElem
   return element;
 }
 
+type PlaneDirection = -1 | 1;
+
+const BUTTON_CLIP = "polygon(0 0, 100% 0, 100% 100%, 0 100%)";
+
+function planeDirection(preview: VisualPreview): PlaneDirection {
+  return centerOf(preview.afterNo).x < centerOf(preview.beforeNo).x ? -1 : 1;
+}
+
+function firstFoldClip(direction: PlaneDirection): string {
+  return direction === 1
+    ? "polygon(0 14%, 100% 0, 100% 100%, 0 86%)"
+    : "polygon(100% 14%, 0 0, 0 100%, 100% 86%)";
+}
+
+function planeClip(direction: PlaneDirection): string {
+  return direction === 1
+    ? "polygon(0 0, 100% 50%, 0 100%, 24% 50%)"
+    : "polygon(100% 0, 0 50%, 100% 100%, 76% 50%)";
+}
+
+function createPlaneFold(context: TrickEffectContext): {
+  readonly fold: HTMLElement;
+  readonly creaseOne: HTMLElement;
+  readonly creaseTwo: HTMLElement;
+} {
+  const fold = ownedArtifact(context, "trick-plane-fold");
+  const creaseOne = context.view.letter.ownerDocument.createElement("span");
+  const creaseTwo = context.view.letter.ownerDocument.createElement("span");
+  creaseOne.className = "trick-plane-crease trick-plane-crease--one";
+  creaseTwo.className = "trick-plane-crease trick-plane-crease--two";
+  fold.append(creaseOne, creaseTwo);
+  context.view.noFace.append(fold);
+  return { fold, creaseOne, creaseTwo };
+}
+
 export const TRICK_EFFECTS = {
   "runaway-rsvp": (context) => {
     const { preview, posed } = choosePosePreview(context, "runaway");
@@ -216,52 +251,144 @@ export const TRICK_EFFECTS = {
     const { preview, posed } = choosePosePreview(context, "plane");
     const start = centerDelta(preview.beforeNo, preview.afterNo);
     const rotationDelta = noMotionRotationDelta(preview);
+    const direction = planeDirection(preview);
+    const foldClip = firstFoldClip(direction);
+    const foldedClip = planeClip(direction);
+    const { creaseOne, creaseTwo } = createPlaneFold(context);
+    const options: KeyframeAnimationOptions = {
+      duration: 1_500,
+      easing: "cubic-bezier(.3,.1,.2,1)",
+      fill: "both",
+    };
     const motionKeyframes: Keyframe[] = posed
       ? [
-        { opacity: 1, transform: noMotionTransform(preview, start) },
+        { opacity: 1, offset: 0, transform: noMotionTransform(preview, start) },
+        { opacity: 1, offset: 0.30, transform: noMotionTransform(preview, start) },
         {
           opacity: 1,
-          offset: 0.58,
+          offset: 0.68,
           transform: `${noMotionTransform(
             preview,
-            { x: start.x * 0.45 + 70, y: start.y * 0.4 - 92 },
-            rotationDelta * 0.4 + 22,
-          )} scale(.58)`,
+            { x: start.x * 0.42, y: start.y * 0.36 - 96 },
+            rotationDelta * 0.38 - direction * 18,
+          )} scale(.62)`,
+        },
+        {
+          opacity: 1,
+          offset: 0.80,
+          transform: "translate(0, 0) rotate(0deg) scale(1)",
         },
         { opacity: 1, transform: "translate(0, 0) rotate(0deg) scale(1)" },
       ]
       : [
-        { opacity: 1, transform: noMotionTransform(preview, { x: 0, y: 0 }) },
         {
-          opacity: 0.88,
-          transform: `${noMotionTransform(preview, { x: 0, y: -8 }, 5)} scale(.9)`,
+          opacity: 1,
+          offset: 0,
+          transform: noMotionTransform(preview, { x: 0, y: 0 }),
+        },
+        {
+          opacity: 1,
+          offset: 0.30,
+          transform: noMotionTransform(preview, { x: 0, y: 0 }),
+        },
+        {
+          opacity: 1,
+          offset: 0.68,
+          transform: `${noMotionTransform(preview, { x: 0, y: -36 })} scale(.72)`,
+        },
+        {
+          opacity: 1,
+          offset: 0.80,
+          transform: "translate(0, 0) rotate(0deg) scale(1)",
         },
         { opacity: 1, transform: "translate(0, 0) rotate(0deg) scale(1)" },
       ];
-    context.animate(context.view.noMotion, motionKeyframes, {
-      duration: 1_000,
-      easing: "cubic-bezier(.3,.1,.2,1)",
-      fill: "both",
-    });
+    context.animate(context.view.noMotion, motionKeyframes, options);
     context.animate(
       context.view.noFace,
       [
-        { clipPath: "inset(0)", rotate: "0deg", scale: "1", opacity: 1 },
         {
-          clipPath: "polygon(0 0, 100% 50%, 0 100%, 25% 50%)",
-          rotate: "-12deg",
-          scale: ".82",
-          opacity: 1,
-          offset: 0.5,
+          clipPath: BUTTON_CLIP,
+          borderRadius: "999px",
+          rotate: "0deg",
+          scale: "1",
+          offset: 0,
         },
-        { clipPath: "inset(0)", rotate: "0deg", scale: "1", opacity: 1 },
+        {
+          clipPath: foldClip,
+          borderRadius: "5px",
+          rotate: `${direction * -4}deg`,
+          scale: ".94",
+          offset: 0.16,
+        },
+        {
+          clipPath: foldedClip,
+          borderRadius: "0",
+          rotate: `${direction * -12}deg`,
+          scale: ".78",
+          offset: 0.30,
+        },
+        {
+          clipPath: foldedClip,
+          borderRadius: "0",
+          rotate: `${direction * 3}deg`,
+          scale: ".78",
+          offset: 0.80,
+        },
+        {
+          clipPath: foldClip,
+          borderRadius: "5px",
+          rotate: "0deg",
+          scale: ".94",
+          offset: 0.90,
+        },
+        {
+          clipPath: BUTTON_CLIP,
+          borderRadius: "999px",
+          rotate: "0deg",
+          scale: "1",
+          offset: 1,
+        },
       ],
-      { duration: 1_000, easing: "ease-in-out", fill: "both" },
+      options,
+    );
+    context.animate(
+      context.view.noLabel,
+      [
+        { opacity: 1, scale: "1", offset: 0 },
+        { opacity: 0, scale: ".2 1", offset: 0.28 },
+        { opacity: 0, scale: ".2 1", offset: 0.82 },
+        { opacity: 1, scale: "1", offset: 1 },
+      ],
+      options,
+    );
+    context.animate(
+      creaseOne,
+      [
+        { opacity: 0, rotate: "0deg", offset: 0 },
+        { opacity: 1, rotate: `${direction * 24}deg`, offset: 0.18 },
+        { opacity: 1, rotate: `${direction * 24}deg`, offset: 0.80 },
+        { opacity: 0, rotate: "0deg", offset: 0.90 },
+        { opacity: 0, rotate: "0deg", offset: 1 },
+      ],
+      options,
+    );
+    context.animate(
+      creaseTwo,
+      [
+        { opacity: 0, rotate: "0deg", offset: 0 },
+        { opacity: 0, rotate: "0deg", offset: 0.22 },
+        { opacity: 1, rotate: `${direction * -24}deg`, offset: 0.30 },
+        { opacity: 1, rotate: `${direction * -24}deg`, offset: 0.80 },
+        { opacity: 0, rotate: "0deg", offset: 0.90 },
+        { opacity: 0, rotate: "0deg", offset: 1 },
+      ],
+      options,
     );
     return {
       message: "NO folded into a paper plane and landed somewhere safe.",
       preview,
-      fallbackMs: 1_200,
+      fallbackMs: 1_750,
       persistence: "commit-target",
     };
   },

@@ -131,6 +131,29 @@ for (const trick of SPATIAL_TRICKS) {
   });
 }
 
+test("Paper Plane folds before flight without changing NO semantics", async ({ page }) => {
+  await forceTrickOrder(page, ["paper-plane"]);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/?to=Jamie");
+  await settleLetter(page);
+
+  const no = page.locator("[data-no]");
+  await no.click();
+  const timing = await seekTrickAnimations(page, 0.50);
+  expect(timing.maxDuration).toBeGreaterThanOrEqual(1_500);
+  await expect(page.locator(".trick-plane-fold[data-trick-artifact]")).toBeAttached();
+  await expect(page.locator(".trick-plane-crease")).toHaveCount(2);
+  await expect.poll(async () => Number.parseFloat(await page.locator("[data-no-label]").evaluate(
+    (label) => getComputedStyle(label).opacity,
+  ))).toBeLessThan(0.1);
+  await expect(page.getByRole("button", { name: /NO, SORRY/i })).toBeVisible();
+
+  await resumeTrickAnimations(page);
+  await waitForTrickIdle(page);
+  await expect(page.locator(".trick-plane-fold")).toHaveCount(0);
+  await expect(page.locator("[data-trick-artifact]")).toHaveCount(0);
+});
+
 test("a later spatial trick replaces the absolute NO translation", async ({ page }) => {
   await forceTrickOrder(page, ["runaway-rsvp", "paper-plane"]);
   await page.setViewportSize({ width: 1280, height: 900 });
