@@ -226,8 +226,9 @@ export async function assertSafeNoGeometry(page: Page): Promise<void> {
       bottom: letterBox.bottom - border.bottom - 8,
     };
     const noButton = required<HTMLButtonElement>("[data-no]");
+    const noSeat = required<HTMLElement>("[data-no-seat]");
     const noRect = union([
-      box(required("[data-no-seat]")),
+      box(noSeat),
       box(noButton),
       box(required("[data-no-face]")),
     ]);
@@ -242,6 +243,11 @@ export async function assertSafeNoGeometry(page: Page): Promise<void> {
     return {
       noRect,
       safeLetter,
+      pose: {
+        x: noSeat.style.getPropertyValue("--no-pose-x"),
+        y: noSeat.style.getPropertyValue("--no-pose-y"),
+        rotation: noSeat.style.getPropertyValue("--no-rotation"),
+      },
       hit: { width: noButton.offsetWidth, height: noButton.offsetHeight },
       overlapsYes: overlaps(noRect, yesRect),
       protectedOverlap: protectedRects.find((entry) => overlaps(noRect, entry.box))?.selector ?? null,

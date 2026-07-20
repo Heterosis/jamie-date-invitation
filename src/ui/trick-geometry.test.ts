@@ -582,7 +582,7 @@ describe("createTrickVisualController", () => {
     expect(harness.noCostume.textContent).toBe("🥸");
   });
 
-  it("adjusts an unsafe composed scale/order/pose target and restores the committed render", () => {
+  it("rebases an unsafe pose without discarding safe scale or order layers", () => {
     const harness = createHarness([rect(100, 470, 52, 60)]);
 
     const preview = harness.controller.preview({
@@ -591,11 +591,11 @@ describe("createTrickVisualController", () => {
       noPose: { centerX: 20, centerY: 500, rotation: 0 },
     });
 
-    expect(preview.target.yesScale).toBeCloseTo(1.1, 8);
-    expect(preview.target.swapped).toBe(false);
-    expect(preview.target.noPose).toBeNull();
-    expect(preview.afterYes.width).toBeCloseTo(88);
-    expect(preview.afterNo.left - preview.afterYes.right).toBeCloseTo(12);
+    expect(preview.target.yesScale).toBe(1.5);
+    expect(preview.target.swapped).toBe(true);
+    expect(preview.target.noPose).not.toBeNull();
+    expect(preview.target.noPose).not.toEqual({ centerX: 20, centerY: 500, rotation: 0 });
+    expect(preview.afterYes.width).toBeCloseTo(120);
     expect(harness.controller.state).toBe(INITIAL_TRICK_VISUAL_STATE);
     expect(harness.yesFace.style.getPropertyValue("--yes-scale")).toBe("1");
     expect(harness.stage.hasAttribute("data-swapped")).toBe(false);
@@ -603,7 +603,7 @@ describe("createTrickVisualController", () => {
     expect(harness.noLabel.textContent).toBe("NO, SORRY");
   });
 
-  it("bounds layout reads when scale cannot repair an unsafe pose and order", () => {
+  it("bounds layout reads while rebasing an unsafe composed pose", () => {
     const harness = createHarness([rect(100, 470, 52, 60)]);
     const readsBefore = totalRectReads(harness);
 
@@ -614,10 +614,10 @@ describe("createTrickVisualController", () => {
     });
     const previewReads = totalRectReads(harness) - readsBefore;
 
-    expect(preview.target.yesScale).toBeCloseTo(1.1, 8);
-    expect(preview.target.swapped).toBe(false);
-    expect(preview.target.noPose).toBeNull();
-    // 8 baseline + (10 + 8) impossible lower probes + 7 * 8 binary/endpoint probes.
+    expect(preview.target.yesScale).toBe(1.5);
+    expect(preview.target.swapped).toBe(true);
+    expect(preview.target.noPose).not.toBeNull();
+    // The deterministic rebase remains bounded rather than searching the layout indefinitely.
     expect(previewReads).toBeLessThanOrEqual(82);
   });
 
@@ -762,6 +762,7 @@ describe("createTrickVisualController", () => {
     expect(harness.controller.state.noScale).toBe(0.82);
     expect(harness.controller.state.swapped).toBe(false);
     expect(harness.controller.state.disguised).toBe(true);
+    expect(harness.controller.state.noPose).not.toBeNull();
     expect(harness.controller.state.noPose).not.toEqual(disguised.target.noPose);
     expect(harness.noLabel.textContent).toBe("Okay, I'll behave…");
     expect(harness.noCostume.textContent).toBe("🥸");
@@ -779,7 +780,8 @@ describe("createTrickVisualController", () => {
     harness.addProtected(rect(450, 380, 100, 80));
 
     harness.controller.revalidate();
-    expect(harness.controller.state.noPose).toBeNull();
+    expect(harness.controller.state.noPose).not.toBeNull();
+    expect(harness.controller.state.noPose).not.toEqual(posed.target.noPose);
     const staged = applyTrickVisualPatch(harness.controller.state, { yesScale: 1.2, swapped: true });
     harness.controller.stage(staged);
     expect(harness.controller.state.yesScale).toBe(1);

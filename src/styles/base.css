@@ -11,5 +11,6 @@ html[data-motion="reduced"] *, html[data-motion="reduced"] *::before, html[data-
   scroll-behavior: auto !important;
   animation-duration: .01ms !important;
   animation-iteration-count: 1 !important;
-  transition-duration: .01ms !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
 }

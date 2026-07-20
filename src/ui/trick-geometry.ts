@@ -589,6 +589,46 @@ export function createTrickVisualController(
     return best;
   }
 
+  function rebasePoseBeforeUsingOrigin(
+    state: Readonly<TrickVisualState>,
+    probe: (state: Readonly<TrickVisualState>) => SafetyProbeResult,
+    currentRotation: number,
+  ): ValidatedTarget | null {
+    const unposed = state.noPose
+      ? applyTrickVisualPatch(state, { noPose: null })
+      : state;
+    const firstOrigin = probe(unposed);
+    const tryRebase = (
+      originState: Readonly<TrickVisualState>,
+      originMeasurement: Measurement,
+    ): ValidatedTarget | null => {
+      const pose = chooseSafeNoPose(originMeasurement.snapshot, {
+        intent: "returned",
+        attempt: 0,
+        currentRotation,
+      });
+      if (!pose) return null;
+      return clampYesTowardSafe(
+        applyTrickVisualPatch(originState, { noPose: pose }),
+        probe,
+      );
+    };
+
+    const rebased = tryRebase(unposed, firstOrigin.measurement);
+    if (rebased) return rebased;
+
+    const safeOrigin = clampYesTowardSafe(unposed, probe);
+    if (!safeOrigin) return null;
+    if (safeOrigin.state !== unposed) {
+      const rebasedAfterClamp = tryRebase(
+        safeOrigin.state,
+        safeOrigin.measurement,
+      );
+      if (rebasedAfterClamp) return rebasedAfterClamp;
+    }
+    return safeOrigin;
+  }
+
   function validate(
     requested: Readonly<TrickVisualState>,
     fallback: ValidatedTarget,
@@ -600,9 +640,13 @@ export function createTrickVisualController(
     if (validated) return validated;
 
     if (candidate.noPose) {
-      candidate = applyTrickVisualPatch(candidate, { noPose: null });
-      validated = clampYesTowardSafe(candidate, probe);
+      validated = rebasePoseBeforeUsingOrigin(
+        candidate,
+        probe,
+        candidate.noPose.rotation,
+      );
       if (validated) return validated;
+      candidate = applyTrickVisualPatch(candidate, { noPose: null });
     }
 
     if (candidate.swapped) {
@@ -635,28 +679,15 @@ export function createTrickVisualController(
     ready: boolean,
   ): ValidatedTarget {
     const probe = createSafetyProbe(ready, [fallback]);
-    let validated = probe(requested).validated;
+    const validated = probe(requested).validated;
     if (validated) return validated;
 
-    const unposed = requested.noPose
-      ? applyTrickVisualPatch(requested, { noPose: null })
-      : requested;
-    if (unposed !== requested) {
-      validated = probe(unposed).validated;
-      if (validated) return validated;
-    }
-
-    const measurement = probe(unposed).measurement;
-    const rebasedPose = chooseSafeNoPose(measurement.snapshot, {
-      intent: "returned",
-      attempt: 0,
-      currentRotation: requested.noPose?.rotation ?? 0,
-    });
-    if (rebasedPose) {
-      const rebased = applyTrickVisualPatch(unposed, { noPose: rebasedPose });
-      validated = probe(rebased).validated;
-      if (validated) return validated;
-    }
+    const recovered = rebasePoseBeforeUsingOrigin(
+      requested,
+      probe,
+      requested.noPose?.rotation ?? 0,
+    );
+    if (recovered) return recovered;
 
     throw new Error("Unable to rebase the NO pose after copy reflow");
   }
