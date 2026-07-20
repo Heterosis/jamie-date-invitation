@@ -161,8 +161,11 @@ test("a later spatial trick replaces the absolute NO translation", async ({ page
 });
 
 test("Growing enlarges YES and shrinks only NO's visual face", async ({ page }) => {
-  await forceTrickOrder(page, ["growing-feelings"]);
+  await forceTrickOrder(page, ["runaway-rsvp", "growing-feelings"]);
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/?to=Jamie");
+  await settleLetter(page);
+  await activateNoAndWait(page);
   await page.locator("[data-yes]").focus();
   const before = await page.locator("[data-actions]").evaluate((actions) => {
     const yes = actions.querySelector<HTMLElement>("[data-yes-face]")!.getBoundingClientRect();
@@ -195,8 +198,9 @@ test("Growing enlarges YES and shrinks only NO's visual face", async ({ page }) 
 
   expect(after.yesWidth).toBeGreaterThan(before.yesWidth);
   expect(after.noWidth).toBeLessThan(before.noWidth);
-  expect(after.yesScale).toBeGreaterThan(1);
-  expect(after.noScale).toBeLessThan(1);
+  expect(after.yesScale).toBeGreaterThan(1.3);
+  expect(after.yesScale).toBeLessThanOrEqual(1.75);
+  expect(after.noScale).toBeCloseTo(0.5, 2);
   expect(after.hitWidth).toBeGreaterThanOrEqual(44);
   expect(after.hitHeight).toBeGreaterThanOrEqual(44);
 });

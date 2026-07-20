@@ -12,6 +12,8 @@ import { createTrickRunner, type TrickEffectContext } from "./trick-runner";
 import {
   applyTrickVisualPatch,
   INITIAL_TRICK_VISUAL_STATE,
+  MAX_YES_SCALE,
+  MIN_NO_FACE_SCALE,
   type NoPose,
   type TrickVisualPatch,
   type TrickVisualState,
@@ -367,19 +369,29 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
   });
 
   it("Growing Feelings caps both scale patches and animates both faces", () => {
-    const state = Object.freeze({
-      ...INITIAL_TRICK_VISUAL_STATE,
-      yesScale: 1.46,
-      noScale: 0.7,
-    });
-    const fixture = fakeEffectFixture({ state });
+    const fixture = fakeEffectFixture();
     const result = TRICK_EFFECTS["growing-feelings"](fixture.context);
 
-    expect(fixture.preview).toHaveBeenCalledWith({ yesScale: 1.5, noScale: 0.68 });
+    expect(fixture.preview).toHaveBeenCalledWith({
+      yesScale: MAX_YES_SCALE,
+      noScale: MIN_NO_FACE_SCALE,
+    });
     expect(fixture.animationCalls.map(({ element }) => element)).toEqual([
       fixture.elements.yesFace,
       fixture.elements.noFace,
     ]);
+    expect(keyframesOf(fixture.animationCalls[0]!).map(({ scale }) => scale)).toEqual([
+      "1",
+      "1.18",
+      "1",
+    ]);
+    expect(keyframesOf(fixture.animationCalls[1]!).map(({ scale }) => scale)).toEqual([
+      "1",
+      ".76",
+      "1",
+    ]);
+    expect(fixture.animationCalls.map(({ options }) => options.duration)).toEqual([650, 650]);
+    expect(result.fallbackMs).toBe(850);
     expect(result.persistence).toBe("commit-target");
   });
 
@@ -749,9 +761,9 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
     ["runaway-rsvp", { noPose: SAFE_POSE }, "commit-target", 900],
     [
       "growing-feelings",
-      { yesScale: 1.2 + 0.1, noScale: 0.9 - 0.06 },
+      { yesScale: MAX_YES_SCALE, noScale: MIN_NO_FACE_SCALE },
       "commit-target",
-      700,
+      850,
     ],
     ["seat-swap", { swapped: true }, "commit-target", 900],
     ["cupid-magnet", { noPose: SAFE_POSE }, "commit-target", 1_050],

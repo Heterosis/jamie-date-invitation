@@ -37,6 +37,9 @@ describe("applyTrickVisualPatch", () => {
   });
 
   it("clamps configured scale bounds and freezes emitted state", () => {
+    expect(MAX_YES_SCALE).toBe(1.75);
+    expect(MIN_NO_FACE_SCALE).toBe(0.5);
+
     const state = applyTrickVisualPatch(INITIAL_TRICK_VISUAL_STATE, {
       yesScale: 99,
       noScale: -1,

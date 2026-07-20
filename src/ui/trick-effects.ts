@@ -1,5 +1,6 @@
 import type { Point, SpatialIntent, VisualPreview } from "./trick-geometry";
 import type { TrickEffectContext, TrickRegistry } from "./trick-runner";
+import { MAX_YES_SCALE, MIN_NO_FACE_SCALE } from "./trick-state";
 
 interface PosePreview {
   readonly preview: VisualPreview;
@@ -124,23 +125,23 @@ export const TRICK_EFFECTS = {
 
   "growing-feelings": (context) => {
     const preview = context.preview({
-      yesScale: Math.min(1.5, context.state.yesScale + 0.1),
-      noScale: Math.max(0.68, context.state.noScale - 0.06),
+      yesScale: MAX_YES_SCALE,
+      noScale: MIN_NO_FACE_SCALE,
     });
     context.animate(
       context.view.yesFace,
-      [{ scale: "1" }, { scale: "1.08", offset: 0.55 }, { scale: "1" }],
-      { duration: 520, easing: "ease-out", fill: "both" },
+      [{ scale: "1" }, { scale: "1.18", offset: 0.55 }, { scale: "1" }],
+      { duration: 650, easing: "ease-out", fill: "both" },
     );
     context.animate(
       context.view.noFace,
-      [{ scale: "1" }, { scale: ".92", offset: 0.55 }, { scale: "1" }],
-      { duration: 520, easing: "ease-out", fill: "both" },
+      [{ scale: "1" }, { scale: ".76", offset: 0.55 }, { scale: "1" }],
+      { duration: 650, easing: "ease-out", fill: "both" },
     );
     return {
       message: "Funny—the feelings seem to be growing.",
       preview,
-      fallbackMs: 700,
+      fallbackMs: 850,
       persistence: "commit-target",
     };
   },

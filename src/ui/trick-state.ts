@@ -14,8 +14,8 @@ export interface TrickVisualState {
 
 export type TrickVisualPatch = Partial<TrickVisualState>;
 
-export const MAX_YES_SCALE = 1.5;
-export const MIN_NO_FACE_SCALE = 0.68;
+export const MAX_YES_SCALE = 1.75;
+export const MIN_NO_FACE_SCALE = 0.5;
 
 export const INITIAL_TRICK_VISUAL_STATE: Readonly<TrickVisualState> = Object.freeze({
   noPose: null,
