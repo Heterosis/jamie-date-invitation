@@ -46,7 +46,7 @@ The existing `runaway` pose selection already sorts valid slots by distance and 
 ### Growing Feelings
 
 - Raise the persistent state limits to YES `1.75` and NO face `0.50`.
-- Request `yesScale + 0.35` and `noScale - 0.22`, clamped to those limits.
+- Request YES `1.75` and NO face `0.50` directly so the one non-repeating Growing draw reaches the approved visual intensity. State clamping still enforces those limits.
 - Increase the temporary pulse to approximately YES `1.18` and NO `0.76` before returning each face animation to identity.
 - Duration: `650ms`; fallback: `850ms`.
 - Geometry may clamp YES below `1.75` only when the requested scale would overlap protected content or leave the safe region.
