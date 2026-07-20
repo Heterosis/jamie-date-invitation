@@ -75,7 +75,7 @@ Implementation details:
 - Duration: approximately `1500ms`; fallback: `1750ms`.
 - Use four-point polygons for every clip-path frame so Chromium can interpolate the fold continuously.
 - Use a runner-owned, `aria-hidden`, pointer-event-free `.trick-plane-fold` decoration with crease layers inside the existing NO face. All crease animations go through `context.animate` so the runner waits, cancels, and cleans them with the rest of the trick.
-- Determine heading from the actual safe-pose delta: a landing to the right uses a right-pointing plane polygon; a landing to the left uses its horizontally mirrored polygon. The arc's horizontal flourish uses the same sign. A near-zero delta defaults right, though the plane intent normally selects a meaningful horizontal displacement.
+- Determine heading from the actual safe-pose delta: a landing to the right uses a right-pointing plane polygon; a landing to the left uses its horizontally mirrored polygon. Keep every horizontal flight keyframe between the origin and landing, in monotonic fractions of the remaining delta, so the plane never crosses the target and reverses while its nose still points forward. Put the playful flourish in height, rotation, and scale instead. A near-zero delta defaults right, though the plane intent normally selects a meaningful horizontal displacement.
 - Delay the visible flight until folding is complete, keep the plane silhouette through the flight, then unfold only after landing.
 - Preserve the existing target preview, rotated-seat coordinate conversion, persistent pose, and final identity transform.
 
@@ -121,7 +121,7 @@ Implementation follows red-green-refactor:
 1. Runaway's two-hop path is visibly farther while its landing remains geometry-safe.
 2. Growing targets YES `1.75×` and NO face `0.50×`, with safe YES clamping on constrained layouts.
 3. Garden, Dramatic Excuse, Spotlight, and Return stamp remain visibly present for their specified longer hold windows and still clean up completely.
-4. Paper Plane visibly folds twice before flight, points along both rightward and leftward travel, lands safely, and unfolds without residue.
+4. Paper Plane visibly folds twice before flight, points along both rightward and leftward travel without reversing, lands before it unfolds, and leaves no residue.
 5. YES cancellation, real refusal, resize/revalidation, Seat Swap composition, and repeated trick state remain correct.
 6. Reduced Motion preserves every logical final state without long waits.
 7. The full automated verification suite passes with no new skips.
