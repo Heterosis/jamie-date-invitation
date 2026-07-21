@@ -1,6 +1,17 @@
 import { Temporal } from "@js-temporal/polyfill";
 
+export const DEFAULT_TO = "Jamie";
+export const DEFAULT_TIME_ZONE = "Asia/Singapore";
+export const DEFAULT_DURATION = 120;
 export const DEFAULT_NOTE = "I've got a little plan, a lot of butterflies, and one very important question…";
+
+export function deriveInvitationTitle(from: string): string {
+  return from ? `Date with ${from} 💌` : "A very special date 💌";
+}
+
+export function deriveNotifyName(from: string): string {
+  return from || "ME";
+}
 
 export interface InvitationConfig {
   readonly to: string;
@@ -48,7 +59,9 @@ function validTimeZone(value: string): boolean {
 
 function parseDuration(value: string | null): number {
   const duration = Number(value);
-  return Number.isInteger(duration) && duration >= 15 && duration <= 720 ? duration : 120;
+  return Number.isInteger(duration) && duration >= 15 && duration <= 720
+    ? duration
+    : DEFAULT_DURATION;
 }
 
 function parseTelegram(value: string | null): string | null {
@@ -58,16 +71,16 @@ function parseTelegram(value: string | null): string | null {
 
 export function parseInvitationConfig(search: string): InvitationConfig {
   const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
-  const to = cleanText(params.get("to"), 40) || "Jamie";
+  const to = cleanText(params.get("to"), 40) || DEFAULT_TO;
   const from = cleanText(params.get("from"), 40);
   const rawDate = cleanText(params.get("date"), 10);
   const rawTime = cleanText(params.get("time"), 5);
   const rawTimeZone = cleanText(params.get("tz"), 64);
   const place = cleanText(params.get("place"), 100);
-  const title = cleanText(params.get("title"), 80) || (from ? `Date with ${from} 💌` : "A very special date 💌");
+  const title = cleanText(params.get("title"), 80) || deriveInvitationTitle(from);
   const note = cleanText(params.get("note"), 240) || DEFAULT_NOTE;
   const telegram = parseTelegram(params.get("telegram"));
-  const notifyName = cleanText(params.get("notifyName"), 40) || from || "ME";
+  const notifyName = cleanText(params.get("notifyName"), 40) || deriveNotifyName(from);
   const tgText = cleanText(params.get("tgText"), 500) || null;
 
   return Object.freeze({
@@ -75,7 +88,7 @@ export function parseInvitationConfig(search: string): InvitationConfig {
     from,
     date: validDate(rawDate) ? rawDate : null,
     time: validTime(rawTime) ? rawTime : null,
-    tz: validTimeZone(rawTimeZone) ? rawTimeZone : "Asia/Singapore",
+    tz: validTimeZone(rawTimeZone) ? rawTimeZone : DEFAULT_TIME_ZONE,
     duration: parseDuration(params.get("duration")),
     place,
     title,

@@ -1,5 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_NOTE, parseInvitationConfig } from "./invitation-config";
+import {
+  DEFAULT_DURATION,
+  DEFAULT_NOTE,
+  DEFAULT_TIME_ZONE,
+  DEFAULT_TO,
+  deriveInvitationTitle,
+  deriveNotifyName,
+  parseInvitationConfig,
+} from "./invitation-config";
+
+describe("invitation configuration defaults", () => {
+  it("exports the parser-owned default values", () => {
+    expect(DEFAULT_TO).toBe("Jamie");
+    expect(DEFAULT_TIME_ZONE).toBe("Asia/Singapore");
+    expect(DEFAULT_DURATION).toBe(120);
+  });
+
+  it("exports the parser-owned derivations", () => {
+    expect(deriveInvitationTitle("Alex")).toBe("Date with Alex 💌");
+    expect(deriveNotifyName("Alex")).toBe("Alex");
+  });
+});
 
 describe("parseInvitationConfig", () => {
   it("applies every documented fallback", () => {
