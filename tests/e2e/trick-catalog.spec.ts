@@ -143,6 +143,36 @@ test("Paper Plane folds before flight without changing NO semantics", async ({ p
   expect(timing.maxDuration).toBeGreaterThanOrEqual(1_500);
   await expect(page.locator(".trick-plane-fold[data-trick-artifact]")).toBeAttached();
   await expect(page.locator(".trick-plane-crease")).toHaveCount(2);
+  const outline = page.locator(".trick-plane-outline[data-trick-artifact]");
+  await expect(outline).toBeVisible();
+  const contour = await outline.evaluate((element) => {
+    const polygon = element.querySelector<SVGPolygonElement>("polygon");
+    if (!polygon) throw new Error("Missing Paper Plane outline polygon");
+    const outlineStyle = getComputedStyle(element);
+    const polygonStyle = getComputedStyle(polygon);
+    const bounds = element.getBoundingClientRect();
+    const polygonBounds = polygon.getBBox();
+    return {
+      opacity: Number.parseFloat(outlineStyle.opacity),
+      width: bounds.width,
+      height: bounds.height,
+      stroke: polygonStyle.stroke,
+      strokeOpacity: Number.parseFloat(polygonStyle.strokeOpacity),
+      strokeWidth: Number.parseFloat(polygonStyle.strokeWidth),
+      pathLength: polygon.getTotalLength(),
+      polygonWidth: polygonBounds.width,
+      polygonHeight: polygonBounds.height,
+    };
+  });
+  expect(contour.opacity).toBeGreaterThanOrEqual(0.99);
+  expect(contour.width).toBeGreaterThan(80);
+  expect(contour.height).toBeGreaterThan(30);
+  expect(contour.stroke).not.toBe("none");
+  expect(contour.strokeOpacity).toBeGreaterThan(0);
+  expect(contour.strokeWidth).toBeGreaterThanOrEqual(1);
+  expect(contour.pathLength).toBeGreaterThan(250);
+  expect(contour.polygonWidth).toBeGreaterThan(90);
+  expect(contour.polygonHeight).toBeGreaterThan(90);
   await expect.poll(async () => Number.parseFloat(await page.locator("[data-no-label]").evaluate(
     (label) => getComputedStyle(label).opacity,
   ))).toBeLessThan(0.1);
@@ -151,6 +181,7 @@ test("Paper Plane folds before flight without changing NO semantics", async ({ p
   await resumeTrickAnimations(page);
   await waitForTrickIdle(page);
   await expect(page.locator(".trick-plane-fold")).toHaveCount(0);
+  await expect(page.locator(".trick-plane-outline")).toHaveCount(0);
   await expect(page.locator("[data-trick-artifact]")).toHaveCount(0);
 });
 
