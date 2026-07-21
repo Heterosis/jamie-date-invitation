@@ -58,6 +58,12 @@ class FakeDocument {
     this.created.push(element);
     return element as unknown as HTMLElement;
   }
+
+  createElementNS(_namespace: string, _qualifiedName: string): SVGElement {
+    const element = new FakeElement(this);
+    this.created.push(element);
+    return element as unknown as SVGElement;
+  }
 }
 
 class FakeElement {
@@ -516,8 +522,10 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
     const result = TRICK_EFFECTS["paper-plane"](fixture.context);
 
     expect(fixture.choosePose).toHaveBeenCalledWith("plane");
-    expect(fixture.trackArtifact).toHaveBeenCalledOnce();
-    const [fold] = fixture.trackedArtifacts;
+    expect(fixture.trackArtifact).toHaveBeenCalledTimes(2);
+    const fold = fixture.trackedArtifacts.find(
+      ({ className }) => className === "trick-plane-fold",
+    );
     expect(fold?.className).toBe("trick-plane-fold");
     expect(fold?.getAttribute("aria-hidden")).toBe("true");
     expect(fixture.elements.noFace.children).toContain(fold);
@@ -585,6 +593,37 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
     expect(label.options.duration).toBe(1_500);
     expect(result.fallbackMs).toBe(1_750);
     expect(result.preview.target.noPose).toEqual(SAFE_POSE);
+  });
+
+  it.each([
+    ["right", SAFE_POSE, "2,2 98,50 2,98 25,50"],
+    ["left", LEFT_SAFE_POSE, "98,2 2,50 98,98 75,50"],
+  ] as const)("Paper Plane renders a visible %s-facing outer contour", (_name, pose, points) => {
+    const fixture = fakeEffectFixture({ pose });
+    TRICK_EFFECTS["paper-plane"](fixture.context);
+
+    const outline = fixture.elements.noButton.children.find(
+      ({ className }) => className === "trick-plane-outline",
+    );
+    expect(outline).toBeDefined();
+    expect(outline?.getAttribute("aria-hidden")).toBe("true");
+    expect(outline?.style.getPropertyValue("--plane-base-scale"))
+      .toBe(String(fixture.context.state.noScale));
+
+    const [svg] = outline!.children;
+    const [polygon] = svg!.children;
+    expect(svg?.getAttribute("viewBox")).toBe("0 0 100 100");
+    expect(polygon?.getAttribute("points")).toBe(points);
+    expect(polygon?.getAttribute("stroke")).toBe("currentColor");
+
+    const outlineAnimation = fixture.animationCalls.find(
+      ({ element }) => element === outline,
+    );
+    expect(outlineAnimation).toBeDefined();
+    expect(keyframesOf(outlineAnimation!)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ offset: 0.30, opacity: 1, scale: ".78" }),
+      expect.objectContaining({ offset: 0.80, opacity: 1, scale: ".78" }),
+    ]));
   });
 
   it.each([

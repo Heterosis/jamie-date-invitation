@@ -80,6 +80,7 @@ function ownedArtifact(context: TrickEffectContext, className: string): HTMLElem
 
 type PlaneDirection = -1 | 1;
 
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const RIGHT_BUTTON_CLIP = "polygon(0 0, 100% 0, 100% 100%, 0 100%)";
 const LEFT_BUTTON_CLIP = "polygon(100% 0, 0 0, 0 100%, 100% 100%)";
 
@@ -103,6 +104,12 @@ function planeClip(direction: PlaneDirection): string {
     : "polygon(100% 0, 0 50%, 100% 100%, 76% 50%)";
 }
 
+function planeOutlinePoints(direction: PlaneDirection): string {
+  return direction === 1
+    ? "2,2 98,50 2,98 25,50"
+    : "98,2 2,50 98,98 75,50";
+}
+
 function createPlaneFold(context: TrickEffectContext): {
   readonly fold: HTMLElement;
   readonly creaseOne: HTMLElement;
@@ -116,6 +123,29 @@ function createPlaneFold(context: TrickEffectContext): {
   fold.append(creaseOne, creaseTwo);
   context.view.noFace.append(fold);
   return { fold, creaseOne, creaseTwo };
+}
+
+function createPlaneOutline(
+  context: TrickEffectContext,
+  direction: PlaneDirection,
+): HTMLElement {
+  const outline = ownedArtifact(context, "trick-plane-outline");
+  const svg = context.view.letter.ownerDocument.createElementNS(SVG_NAMESPACE, "svg");
+  const polygon = context.view.letter.ownerDocument.createElementNS(SVG_NAMESPACE, "polygon");
+  svg.setAttribute("viewBox", "0 0 100 100");
+  svg.setAttribute("preserveAspectRatio", "none");
+  polygon.setAttribute("points", planeOutlinePoints(direction));
+  polygon.setAttribute("fill", "none");
+  polygon.setAttribute("stroke", "currentColor");
+  polygon.setAttribute("stroke-width", "1.5");
+  polygon.setAttribute("stroke-linecap", "round");
+  polygon.setAttribute("stroke-linejoin", "round");
+  polygon.setAttribute("vector-effect", "non-scaling-stroke");
+  svg.append(polygon);
+  outline.append(svg);
+  outline.style.setProperty("--plane-base-scale", String(context.state.noScale));
+  context.view.noButton.append(outline);
+  return outline;
 }
 
 export const TRICK_EFFECTS = {
@@ -268,6 +298,7 @@ export const TRICK_EFFECTS = {
     const foldClip = firstFoldClip(direction);
     const foldedClip = planeClip(direction);
     const { creaseOne, creaseTwo } = createPlaneFold(context);
+    const outline = createPlaneOutline(context, direction);
     const options: KeyframeAnimationOptions = {
       duration: 1_500,
       easing: "cubic-bezier(.3,.1,.2,1)",
@@ -395,6 +426,19 @@ export const TRICK_EFFECTS = {
         { opacity: 1, rotate: `${direction * -24}deg`, offset: 0.80 },
         { opacity: 0, rotate: "0deg", offset: 0.90 },
         { opacity: 0, rotate: "0deg", offset: 1 },
+      ],
+      options,
+    );
+    context.animate(
+      outline,
+      [
+        { opacity: 0, rotate: "0deg", scale: "1", offset: 0 },
+        { opacity: 0, rotate: `${direction * -4}deg`, scale: ".94", offset: 0.28 },
+        { opacity: 1, rotate: `${direction * -12}deg`, scale: ".78", offset: 0.30 },
+        { opacity: 1, rotate: `${direction * 3}deg`, scale: ".78", offset: 0.80 },
+        { opacity: 1, rotate: `${direction * 1.2}deg`, scale: ".88", offset: 0.86 },
+        { opacity: 0, rotate: "0deg", scale: ".94", offset: 0.90 },
+        { opacity: 0, rotate: "0deg", scale: "1", offset: 1 },
       ],
       options,
     );
