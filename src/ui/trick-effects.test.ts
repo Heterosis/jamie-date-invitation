@@ -542,6 +542,12 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
       rect(420, 430, 104, 52),
       "trick-cupid-magnet--right",
     ],
+    [
+      "left by center despite its later left edge",
+      rect(120, 430, 400, 52),
+      rect(300, 430, 20, 52),
+      "trick-cupid-magnet--left",
+    ],
   ] as const)(
     "Cupid Magnet faces the current NO center from the %s",
     (_side, leftYes, rightNo, modifier) => {
