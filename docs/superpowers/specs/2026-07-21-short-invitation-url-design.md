@@ -70,7 +70,7 @@ The current parser is the security and validation boundary. It cleans text, enfo
 
 ## 6. Build and routing architecture
 
-The repository adds a source `s/index.html` that imports the same application entry point as the root document. Vite's `build.rollupOptions.input` explicitly names both HTML entries; relying on the development server's SPA fallback is not sufficient. The production build therefore emits both:
+The repository adds a source `s/index.html` that imports the same application entry point as the root document. Vite 8's `build.rolldownOptions.input` explicitly names both HTML entries, and `appType` is set to `mpa`; relying on the default SPA fallback is not sufficient. The production build therefore emits both:
 
 - `dist/index.html`
 - `dist/s/index.html`
@@ -95,7 +95,7 @@ The maker follows this sequence:
 8. Encode the complete envelope as unpadded Base64URL.
 9. Build `<site-base>/s/#<payload>` with the standard `URL` API.
 
-The maker uses that same short URL for the generated field, iframe preview, clipboard action, and Web Share action. Previewing therefore exercises the same route and decoder that the recipient will use.
+While the form is incomplete or invalid, the generated field stays empty, copy/share remain disabled, and the existing legacy query representation may be used only as the internal live-preview source. Once validation passes, the maker uses one short URL for the generated field, iframe preview, clipboard action, and Web Share action. The ready-to-send preview therefore exercises the same route and decoder that the recipient will use.
 
 ## 8. Compact tuple schema
 
@@ -209,7 +209,7 @@ It does not echo the payload, expose exception details, show the maker entry, or
 ## 13. Maker and integration behavior
 
 - Maker mode remains at the root `?make=1` URL.
-- The generated output becomes the short URL only.
+- The generated output becomes the short URL only; an invalid form never exposes its internal legacy preview URL as generated output.
 - Copy and Web Share keep their current fallback and cancellation behavior.
 - The iframe previews the short URL, not a hidden long equivalent.
 - Google Calendar continues to receive validated event fields and never receives the invitation payload.
@@ -271,6 +271,7 @@ The feature adds no analytics, tracking pixels, cookies, browser storage, creden
 - Legacy query URLs continue to render and behave identically.
 - A production build contains both `dist/index.html` and `dist/s/index.html`.
 - Browser verification against `vite preview` loads the built `/s/` document and all assets with HTTP 200.
+- Browser verification against `vite preview` receives HTTP 404 for a known-missing path, proving the MPA test cannot pass through an SPA fallback.
 - The deployed-site smoke test covers both a legacy root query invitation and a short `/s/#<payload>` invitation, including the main-document status and repository-base asset paths.
 
 ### 17.3 Reference length fixture
