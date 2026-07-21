@@ -446,8 +446,49 @@ for (const swapped of [false, true]) {
     await settleLetter(page);
     if (swapped) await activateNoAndWait(page);
     const origin = await centerOf(page, "[data-no]");
+    const before = {
+      yes: await centerOf(page, "[data-yes]"),
+      no: await centerOf(page, "[data-no]"),
+    };
+    const magnetSide = before.no.x < before.yes.x ? "left" : "right";
+    const magnet = page.locator(".trick-cupid-magnet");
+    await expect(magnet).toHaveCount(0);
 
-    await activateNoAndWait(page);
+    await page.locator("[data-no]").click();
+    await seekTrickAnimations(page, 0.55);
+    await expect(magnet).toHaveCount(1);
+    await expect(magnet).toBeVisible();
+    const during = await page.locator("[data-yes-seat]").evaluate((yesSeat) => {
+      const yes = yesSeat.querySelector<HTMLButtonElement>("[data-yes]")!;
+      const magnet = yesSeat.querySelector<HTMLElement>(".trick-cupid-magnet")!;
+      const center = (element: Element) => {
+        const rect = element.getBoundingClientRect();
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      };
+      const yesRect = yes.getBoundingClientRect();
+      const magnetRect = magnet.getBoundingClientRect();
+      return {
+        yes: { center: center(yes), left: yesRect.left, right: yesRect.right },
+        magnet: {
+          center: center(magnet),
+          left: magnetRect.left,
+          right: magnetRect.right,
+          pointerEvents: getComputedStyle(magnet).pointerEvents,
+        },
+      };
+    });
+    expectStableCenter(before.yes, during.yes.center);
+    expect(during.magnet.center.y).toBeCloseTo(during.yes.center.y, 1);
+    if (magnetSide === "left") {
+      expect(during.magnet.right).toBeCloseTo(during.yes.left - 12, 1);
+    } else {
+      expect(during.magnet.left).toBeCloseTo(during.yes.right + 12, 1);
+    }
+    expect(during.magnet.pointerEvents).toBe("none");
+    await expect(page.locator("[data-yes]")).toHaveAccessibleName("YES, I'D LOVE TO");
+
+    await resumeTrickAnimations(page);
+    await waitForTrickIdle(page);
     const landed = await measureNoGeometry(page, origin);
     const diagnostics = {
       origin,
@@ -468,6 +509,8 @@ for (const swapped of [false, true]) {
     } else {
       await expect(page.locator("[data-stage]")).not.toHaveAttribute("data-swapped", "");
     }
+    await expect(magnet).toHaveCount(0);
+    await expect(page.locator("[data-trick-artifact]")).toHaveCount(0);
   });
 }
 
