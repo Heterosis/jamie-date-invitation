@@ -548,6 +548,12 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
       rect(300, 430, 20, 52),
       "trick-cupid-magnet--left",
     ],
+    [
+      "right when NO and YES have equal center X",
+      rect(160, 430, 240, 52),
+      rect(240, 430, 80, 52),
+      "trick-cupid-magnet--right",
+    ],
   ] as const)(
     "Cupid Magnet faces the current NO center from the %s",
     (_side, leftYes, rightNo, modifier) => {
