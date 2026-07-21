@@ -3,6 +3,7 @@ import { expect, test, type Response } from "@playwright/test";
 test("serves a complete invitation from the configured base URL", async ({ page }) => {
   test.skip(!process.env.PLAYWRIGHT_BASE_URL, "Runs only against the deployed Pages URL");
   const baseUrl = new URL(process.env.PLAYWRIGHT_BASE_URL!);
+  const expectedPagesPathPrefix = baseUrl.pathname.replace(/\/?$/, "/");
   const expectedAssetPathPrefix = `${baseUrl.pathname.replace(/\/?$/, "/")}assets/`;
   const assetResponses: Response[] = [];
   const requestFailures: string[] = [];
@@ -39,6 +40,21 @@ test("serves a complete invitation from the configured base URL", async ({ page 
   await expect(page.getByRole("heading", { name: "Jamie, will you go on a date with me?" })).toBeVisible();
   await expect(page.locator("[data-letter]")).toBeVisible();
   await page.evaluate(async () => { await document.fonts.ready; });
+
+  const favicon = page.locator('link[rel="icon"][type="image/svg+xml"]');
+  await expect(favicon, "Invitation must declare exactly one SVG favicon").toHaveCount(1);
+  const faviconUrl = await favicon.evaluate((element) => (element as HTMLLinkElement).href);
+  const faviconResponse = await page.request.get(faviconUrl);
+
+  expect(
+    new URL(faviconUrl).pathname.startsWith(expectedPagesPathPrefix),
+    `${faviconUrl} escaped the configured Pages base ${expectedPagesPathPrefix}`,
+  ).toBe(true);
+  expect(faviconResponse.ok(), `${faviconUrl} returned HTTP ${faviconResponse.status()}`).toBe(true);
+  expect(
+    faviconResponse.headers()["content-type"] ?? "",
+    `${faviconUrl} must return SVG content`,
+  ).toMatch(/^image\/svg\+xml(?:;|$)/i);
 
   const assets = await Promise.all(assetResponses.map(async (response) => ({
     contentType: (await response.headerValue("content-type")) ?? "",
