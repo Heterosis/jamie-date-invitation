@@ -30,7 +30,6 @@ function captureRuntime(page: Page, expectedOrigin: string): RuntimeCapture {
     pageErrors: [],
     requestFailures: [],
   };
-
   page.on("response", (response) => {
     const responseUrl = new URL(response.url());
     if (
@@ -46,6 +45,30 @@ function captureRuntime(page: Page, expectedOrigin: string): RuntimeCapture {
   page.on("pageerror", (error) => capture.pageErrors.push(error.message));
 
   return capture;
+}
+
+async function expectSvgFavicon(page: Page, expectedFaviconUrl: string): Promise<void> {
+  const faviconLinks = page.locator('link[rel~="icon"]');
+  await expect(faviconLinks, "Invitation must declare exactly one favicon link").toHaveCount(1);
+  const favicon = faviconLinks.first();
+  await expect(favicon, "Favicon link must use rel=icon").toHaveAttribute("rel", "icon");
+  await expect(favicon, "Favicon link must declare SVG content").toHaveAttribute(
+    "type",
+    "image/svg+xml",
+  );
+
+  const faviconUrl = await favicon.evaluate((element) => (element as HTMLLinkElement).href);
+  expect(
+    faviconUrl,
+    `Favicon must resolve exactly to the configured Pages SVG URL ${expectedFaviconUrl}`,
+  ).toBe(expectedFaviconUrl);
+  const response = await page.request.get(faviconUrl);
+
+  expect(response.status(), `${faviconUrl} must return exact HTTP 200`).toBe(200);
+  expect(
+    response.headers()["content-type"] ?? "",
+    `${faviconUrl} must return SVG content`,
+  ).toMatch(/^image\/svg\+xml(?:;|$)/i);
 }
 
 async function expectDeployedAssets(
@@ -120,6 +143,7 @@ test("serves a complete legacy query invitation from the deployed base URL", asy
   await expect(page.locator("[data-letter]")).toBeVisible();
   await page.evaluate(async () => { await document.fonts.ready; });
 
+  await expectSvgFavicon(page, new URL("favicon.svg", baseUrl).href);
   await expectDeployedAssets(runtime.assetResponses, expectedAssetPathPrefix);
   expect(runtime.requestFailures, "Legacy invitation requests must not fail").toEqual([]);
   expect(runtime.pageErrors, "Legacy invitation page must not raise errors").toEqual([]);
@@ -180,6 +204,7 @@ test("opens a dynamically generated short invitation in a fresh deployed context
     await expect(recipientPage.locator("[data-signature]")).toHaveText("from Deployed Riley");
     await recipientPage.evaluate(async () => { await document.fonts.ready; });
 
+    await expectSvgFavicon(recipientPage, new URL("favicon.svg", baseUrl).href);
     await expectDeployedAssets(runtime.assetResponses, expectedAssetPathPrefix);
     expect(runtime.requestFailures, "Short invitation requests must not fail").toEqual([]);
     expect(runtime.pageErrors, "Short invitation page must not raise errors").toEqual([]);

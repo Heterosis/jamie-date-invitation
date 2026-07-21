@@ -48,6 +48,30 @@ function captureRuntime(page: Page, expectedOrigin: string): RuntimeCapture {
   return capture;
 }
 
+async function expectSvgFavicon(page: Page, expectedFaviconUrl: string): Promise<void> {
+  const faviconLinks = page.locator('link[rel~="icon"]');
+  await expect(faviconLinks, "Recipient must declare exactly one favicon link").toHaveCount(1);
+  const favicon = faviconLinks.first();
+  await expect(favicon, "Favicon link must use rel=icon").toHaveAttribute("rel", "icon");
+  await expect(favicon, "Favicon link must declare SVG content").toHaveAttribute(
+    "type",
+    "image/svg+xml",
+  );
+
+  const faviconUrl = await favicon.evaluate((element) => (element as HTMLLinkElement).href);
+  expect(
+    faviconUrl,
+    `Favicon must resolve exactly to the configured built SVG URL ${expectedFaviconUrl}`,
+  ).toBe(expectedFaviconUrl);
+  const response = await page.request.get(faviconUrl);
+
+  expect(response.status(), `${faviconUrl} must return exact HTTP 200`).toBe(200);
+  expect(
+    response.headers()["content-type"] ?? "",
+    `${faviconUrl} must return SVG content`,
+  ).toMatch(/^image\/svg\+xml(?:;|$)/i);
+}
+
 async function expectBuiltAssets(
   responses: readonly Response[],
   expectedAssetPathPrefix: string,
@@ -165,6 +189,7 @@ test("serves a real built short invitation and repository-base assets", async ({
     await expect(recipientPage.locator("[data-signature]")).toHaveText("from Production Riley");
     await recipientPage.evaluate(async () => { await document.fonts.ready; });
 
+    await expectSvgFavicon(recipientPage, new URL("favicon.svg", configuredBase).href);
     await expectBuiltAssets(recipientCapture.assetResponses, expectedAssetPathPrefix);
     expect(recipientCapture.requestFailures, "Recipient requests must not fail").toEqual([]);
     expect(recipientCapture.pageErrors, "Recipient page must not raise errors").toEqual([]);
