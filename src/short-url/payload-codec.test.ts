@@ -241,13 +241,20 @@ describe("invitation payload codec", () => {
   it("does not echo decoded payload contents in error messages", () => {
     const marker = "private-marker-4815162342";
     const token = nodeEnvelope(textEncoder.encode(marker));
+    let didThrow = false;
+    let caughtError: unknown;
 
     try {
       decodeInvitationPayload(token);
-      throw new Error("Expected decoding to fail.");
     } catch (error) {
-      expect(String(error)).not.toContain(marker);
+      didThrow = true;
+      caughtError = error;
     }
+
+    expect(didThrow).toBe(true);
+    const errorText = String(caughtError);
+    expect(errorText).not.toContain(marker);
+    expect(errorText).not.toContain(token);
   });
 
   it("keeps the approved reference fixture payload at or below 87 characters", () => {
