@@ -495,6 +495,16 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
       expect(fixture.choosePose).toHaveBeenCalledOnce();
       expect(fixture.choosePose).toHaveBeenCalledWith("magnet");
       expect(fixture.preview).toHaveBeenCalledWith({ noPose: SAFE_POSE });
+      expect(fixture.trackArtifact).toHaveBeenCalledTimes(1);
+      expect(fixture.trackedArtifacts).toHaveLength(1);
+      const [magnet] = fixture.trackedArtifacts;
+      expect(magnet?.className).toBe(
+        `trick-cupid-magnet trick-cupid-magnet--${swapped ? "left" : "right"}`,
+      );
+      expect(magnet?.textContent).toBe("🧲");
+      expect(magnet?.dataset.trickArtifact).toBe("true");
+      expect(magnet?.getAttribute("aria-hidden")).toBe("true");
+      expect(fixture.elements.yesSeat.children).toContain(magnet);
       const motion = fixture.animationCalls.find((call) => call.element === fixture.elements.noMotion);
       expect(motion).toBeDefined();
       const keyframes = keyframesOf(motion!);
@@ -513,9 +523,57 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
       );
       expectSettledMotion(transformAt(keyframes, -1));
       expect(result.preview.target.noPose).toEqual(SAFE_POSE);
+      expect(result.message).toBe("Cupid's magnet pulled NO toward YES, then set it down safely.");
+      expect(result.fallbackMs).toBe(1_050);
       expect(result.persistence).toBe("commit-target");
     },
   );
+
+  it.each([
+    [
+      "left",
+      rect(420, 430, 112, 52),
+      rect(120, 430, 104, 52),
+      "trick-cupid-magnet--left",
+    ],
+    [
+      "right",
+      rect(120, 430, 112, 52),
+      rect(420, 430, 104, 52),
+      "trick-cupid-magnet--right",
+    ],
+  ] as const)(
+    "Cupid Magnet faces the current NO center from the %s",
+    (_side, leftYes, rightNo, modifier) => {
+      const fixture = fakeEffectFixture({ leftYes, rightNo });
+
+      TRICK_EFFECTS["cupid-magnet"](fixture.context);
+
+      const [magnet] = fixture.trackedArtifacts;
+      expect(magnet).toBeDefined();
+      expect(magnet!.className).toContain(modifier);
+    },
+  );
+
+  it("Cupid Magnet owns the approved six-frame magnet motion", () => {
+    const fixture = fakeEffectFixture();
+
+    TRICK_EFFECTS["cupid-magnet"](fixture.context);
+
+    const [magnet] = fixture.trackedArtifacts;
+    expect(magnet).toBeDefined();
+    const magnetAnimation = fixture.animationCalls.find(({ element }) => element === magnet);
+    expect(magnetAnimation).toBeDefined();
+    expect(magnetAnimation?.options.duration).toBe(880);
+    expect(keyframesOf(magnetAnimation!)).toEqual([
+      { offset: 0, opacity: 0, transform: "translateY(4px) scale(.65) rotate(-16deg)" },
+      { offset: 0.18, opacity: 1, transform: "translateY(-4px) scale(1.12) rotate(7deg)" },
+      { offset: 0.42, opacity: 1, transform: "translateY(2px) scale(.96) rotate(-6deg)" },
+      { offset: 0.66, opacity: 1, transform: "translateY(-1px) scale(1.04) rotate(4deg)" },
+      { offset: 0.82, opacity: 1, transform: "translateY(0) scale(1) rotate(0deg)" },
+      { offset: 1, opacity: 0, transform: "translateY(0) scale(.9) rotate(-4deg)" },
+    ]);
+  });
 
   it("Paper Plane owns two crease layers and folds before direction-aware flight", () => {
     const fixture = fakeEffectFixture();
