@@ -36,6 +36,8 @@ jobs:
         run: npm run test:e2e
       - name: Production build
         run: npm run build
+      - name: Production preview tests
+        run: npm run test:e2e:preview
       - name: Configure Pages
         uses: actions/configure-pages@v6
       - name: Upload Pages artifact

@@ -1,3 +1,5 @@
+import { stat } from "node:fs/promises";
+import { resolve } from "node:path";
 import {
   expect,
   test,
@@ -14,9 +16,7 @@ interface RuntimeCapture {
   readonly requestFailures: string[];
 }
 
-function deployedBaseUrl(): URL {
-  const value = process.env.PLAYWRIGHT_BASE_URL;
-  if (!value) throw new Error("PLAYWRIGHT_BASE_URL is required for deployed smoke tests");
+function normalizedBaseUrl(value: string): URL {
   const url = new URL(value);
   url.pathname = url.pathname.replace(/\/?$/, "/");
   url.search = "";
@@ -48,7 +48,7 @@ function captureRuntime(page: Page, expectedOrigin: string): RuntimeCapture {
   return capture;
 }
 
-async function expectDeployedAssets(
+async function expectBuiltAssets(
   responses: readonly Response[],
   expectedAssetPathPrefix: string,
 ): Promise<void> {
@@ -63,15 +63,15 @@ async function expectDeployedAssets(
   const scripts = assets.filter(({ resourceType }) => resourceType === "script");
   const stylesheets = assets.filter(({ resourceType }) => resourceType === "stylesheet");
 
-  expect(fonts, "Browser did not receive a bundled font response").not.toHaveLength(0);
-  expect(scripts, "Browser did not receive a bundled script response").not.toHaveLength(0);
-  expect(stylesheets, "Browser did not receive a bundled stylesheet response").not.toHaveLength(0);
+  expect(fonts, "Recipient did not receive a bundled font response").not.toHaveLength(0);
+  expect(scripts, "Recipient did not receive a bundled script response").not.toHaveLength(0);
+  expect(stylesheets, "Recipient did not receive a bundled stylesheet response").not.toHaveLength(0);
 
   for (const asset of assets) {
     expect(asset.status, `${asset.url} did not return an exact HTTP 200`).toBe(200);
     expect(
       asset.pathname.startsWith(expectedAssetPathPrefix),
-      `${asset.pathname} escaped the configured Pages asset base ${expectedAssetPathPrefix}`,
+      `${asset.pathname} is not beneath the built asset base ${expectedAssetPathPrefix}`,
     ).toBe(true);
   }
   for (const stylesheet of stylesheets) {
@@ -89,57 +89,42 @@ async function expectDeployedAssets(
   }
 }
 
-test("serves a complete legacy query invitation from the deployed base URL", async ({ page }) => {
-  test.skip(!process.env.PLAYWRIGHT_BASE_URL, "Runs only against the deployed Pages URL");
-  const baseUrl = deployedBaseUrl();
-  const expectedAssetPathPrefix = `${baseUrl.pathname}assets/`;
-  const runtime = captureRuntime(page, baseUrl.origin);
-
-  const url = new URL(baseUrl);
-  url.search = new URLSearchParams({
-    to: "Jamie",
-    from: "Alex",
-    date: "2026-08-08",
-    time: "19:30",
-    tz: "Asia/Singapore",
-    telegram: "alex_date",
-    notifyName: "Alex",
-  }).toString();
-
-  const documentResponse = await page.goto(url.toString());
-  if (!documentResponse) throw new Error("Legacy navigation had no main document response");
-
-  expect(documentResponse.status(), "Legacy document must return exact HTTP 200").toBe(200);
-  expect(new URL(documentResponse.url()).pathname).toBe(baseUrl.pathname);
-  expect(
-    (await documentResponse.headerValue("content-type")) ?? "",
-    "Legacy document must return HTML",
-  ).toMatch(/^text\/html(?:;|$)/i);
-  expect(new URL(page.url()).pathname).toBe(baseUrl.pathname);
-  await expect(page.getByRole("heading", { name: "Jamie, will you go on a date with me?" })).toBeVisible();
-  await expect(page.locator("[data-letter]")).toBeVisible();
-  await page.evaluate(async () => { await document.fonts.ready; });
-
-  await expectDeployedAssets(runtime.assetResponses, expectedAssetPathPrefix);
-  expect(runtime.requestFailures, "Legacy invitation requests must not fail").toEqual([]);
-  expect(runtime.pageErrors, "Legacy invitation page must not raise errors").toEqual([]);
-});
-
-test("opens a dynamically generated short invitation in a fresh deployed context", async ({
+test("serves a real built short invitation and repository-base assets", async ({
+  baseURL,
   browser,
-}) => {
-  test.skip(!process.env.PLAYWRIGHT_BASE_URL, "Runs only against the deployed Pages URL");
-  const baseUrl = deployedBaseUrl();
-  const expectedShortPath = `${baseUrl.pathname}s/`;
-  const expectedAssetPathPrefix = `${baseUrl.pathname}assets/`;
-  const makerContext = await browser.newContext({ serviceWorkers: "block" });
+  request,
+}, testInfo) => {
+  if (!baseURL) throw new Error("Production preview requires a configured baseURL");
+  const configuredBase = normalizedBaseUrl(baseURL);
+  const expectedShortPath = `${configuredBase.pathname}s/`;
+  const expectedAssetPathPrefix = `${configuredBase.pathname}assets/`;
+
+  for (const outputPath of [
+    resolve("dist", "index.html"),
+    resolve("dist", "s", "index.html"),
+  ]) {
+    expect((await stat(outputPath)).isFile(), `${outputPath} must be a real file`).toBe(true);
+  }
+
+  const missingUrl = new URL("__known-missing-short-route__.html", configuredBase);
+  missingUrl.searchParams.set("cacheBust", `${Date.now()}-${testInfo.retry}`);
+  const missingResponse = await request.get(missingUrl.toString());
+  expect(
+    missingResponse.status(),
+    `${missingUrl.pathname} must prove MPA fallback behavior with an exact 404`,
+  ).toBe(404);
+
+  const makerContext = await browser.newContext({
+    baseURL: configuredBase.toString(),
+    serviceWorkers: "block",
+  });
   let recipientContext: Awaited<ReturnType<typeof browser.newContext>> | undefined;
 
   try {
     const makerPage = await makerContext.newPage();
-    await makerPage.goto(new URL("?make=1", baseUrl).toString());
-    await makerPage.getByLabel("To", { exact: true }).fill("Deployed Morgan");
-    await makerPage.getByLabel("From").fill("Deployed Riley");
+    await makerPage.goto("?make=1");
+    await makerPage.getByLabel("To", { exact: true }).fill("Production Morgan");
+    await makerPage.getByLabel("From").fill("Production Riley");
     await makerPage.getByLabel("Date").fill("2026-08-08");
     await makerPage.getByLabel("Time").fill("19:30");
     await makerPage.getByLabel("IANA zone").selectOption("Asia/Singapore");
@@ -150,14 +135,14 @@ test("opens a dynamically generated short invitation in a fresh deployed context
     await expect(generatedField).not.toHaveValue("");
     const generatedHref = await generatedField.inputValue();
     const generatedUrl = new URL(generatedHref);
-    expect(generatedUrl.origin).toBe(baseUrl.origin);
+    expect(generatedUrl.origin).toBe(configuredBase.origin);
     expect(generatedUrl.pathname).toBe(expectedShortPath);
     expect(generatedUrl.search).toBe("");
     expect(generatedUrl.hash).toMatch(/^#[A-Za-z0-9_-]+$/);
 
     recipientContext = await browser.newContext({ serviceWorkers: "block" });
     const recipientPage = await recipientContext.newPage();
-    const runtime = captureRuntime(recipientPage, baseUrl.origin);
+    const recipientCapture = captureRuntime(recipientPage, configuredBase.origin);
     const documentResponse = await recipientPage.goto(generatedHref);
     if (!documentResponse) throw new Error("Short-link navigation had no main document response");
 
@@ -171,18 +156,18 @@ test("opens a dynamically generated short invitation in a fresh deployed context
     expect(new URL(recipientPage.url()).pathname).toBe(expectedShortPath);
     await expect(recipientPage.getByRole("heading", {
       level: 1,
-      name: "Deployed Morgan, will you go on a date with me?",
+      name: "Production Morgan, will you go on a date with me?",
     })).toBeVisible();
     await expect(recipientPage.getByText("Bring your favorite story.", { exact: true })).toBeVisible();
     await expect(recipientPage.locator("[data-date]")).toHaveText("Saturday, August 8, 2026");
     await expect(recipientPage.locator("[data-time]")).toHaveText("7:30 PM");
     await expect(recipientPage.locator("[data-place]")).toHaveText("Botanic Gardens");
-    await expect(recipientPage.locator("[data-signature]")).toHaveText("from Deployed Riley");
+    await expect(recipientPage.locator("[data-signature]")).toHaveText("from Production Riley");
     await recipientPage.evaluate(async () => { await document.fonts.ready; });
 
-    await expectDeployedAssets(runtime.assetResponses, expectedAssetPathPrefix);
-    expect(runtime.requestFailures, "Short invitation requests must not fail").toEqual([]);
-    expect(runtime.pageErrors, "Short invitation page must not raise errors").toEqual([]);
+    await expectBuiltAssets(recipientCapture.assetResponses, expectedAssetPathPrefix);
+    expect(recipientCapture.requestFailures, "Recipient requests must not fail").toEqual([]);
+    expect(recipientCapture.pageErrors, "Recipient page must not raise errors").toEqual([]);
   } finally {
     await recipientContext?.close();
     await makerContext.close();
