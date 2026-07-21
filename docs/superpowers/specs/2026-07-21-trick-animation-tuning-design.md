@@ -74,7 +74,7 @@ The button uses the approved two-step origami sequence rather than snapping from
 
 Implementation details:
 
-- Duration: approximately `1500ms`; fallback: `1750ms`.
+- Duration: approximately `1800ms`; fallback: `2050ms`.
 - Use four-point polygons for every clip-path frame so Chromium can interpolate the fold continuously.
 - Use direction-aware normal-button polygons whose vertex order matches the first fold. In particular, the left-facing rectangle must be ordered right-to-left so interpolation cannot collapse to a zero-width vertical line.
 - Use a runner-owned, `aria-hidden`, pointer-event-free `.trick-plane-fold` decoration with crease layers inside the existing NO face. All crease animations go through `context.animate` so the runner waits, cancels, and cleans them with the rest of the trick.

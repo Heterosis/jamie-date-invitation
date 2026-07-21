@@ -300,7 +300,7 @@ export const TRICK_EFFECTS = {
     const { creaseOne, creaseTwo } = createPlaneFold(context);
     const outline = createPlaneOutline(context, direction);
     const options: KeyframeAnimationOptions = {
-      duration: 1_500,
+      duration: 1_800,
       easing: "cubic-bezier(.3,.1,.2,1)",
       fill: "both",
     };
@@ -445,7 +445,7 @@ export const TRICK_EFFECTS = {
     return {
       message: "NO folded into a paper plane and landed somewhere safe.",
       preview,
-      fallbackMs: 1_750,
+      fallbackMs: 2_050,
       persistence: "commit-target",
     };
   },

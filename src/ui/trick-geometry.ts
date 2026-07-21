@@ -108,6 +108,7 @@ const SLOT_FACTORS = Object.freeze([
 
 const ROTATIONS = Object.freeze([-7, 5, -4, 7, 0] as const);
 const LOCAL_MOVE_RADIUS = 32;
+const PLANE_LOCAL_MOVE_RADIUS = 64;
 const LOCAL_DIRECTIONS = Object.freeze([
   [1, 0],
   [-1, 0],
@@ -224,13 +225,18 @@ export function chooseSafeNoPose(
     }
   }
 
-  const localCandidates = LOCAL_DIRECTIONS.map(([x, y], tieOrder): SlotCandidate => ({
-    point: {
-      x: current.x + x * LOCAL_MOVE_RADIUS,
-      y: current.y + y * LOCAL_MOVE_RADIUS,
-    },
-    tieOrder,
-  }));
+  const localRadii = query.intent === "plane"
+    ? [PLANE_LOCAL_MOVE_RADIUS, LOCAL_MOVE_RADIUS]
+    : [LOCAL_MOVE_RADIUS];
+  const localCandidates = localRadii.flatMap((radius, radiusIndex) => (
+    LOCAL_DIRECTIONS.map(([x, y], directionIndex): SlotCandidate => ({
+      point: {
+        x: current.x + x * radius,
+        y: current.y + y * radius,
+      },
+      tieOrder: radiusIndex * LOCAL_DIRECTIONS.length + directionIndex,
+    }))
+  ));
   localCandidates.sort((first, second) => compareCandidates(
     query.intent,
     boundary,

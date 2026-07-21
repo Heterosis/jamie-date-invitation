@@ -214,6 +214,36 @@ describe("chooseSafeNoPose", () => {
       expect(isSafeNoRect(snapshot, poseRect(pose!, snapshot.noHitSize))).toBe(true);
     },
   );
+
+  it("gives Paper Plane a longer local runway when fixed slots are blocked", () => {
+    const blockedCenters = [
+      [101.44, 510.52],
+      [498.56, 510.52],
+      [300, 533.8],
+      [154, 440.68],
+      [446, 440.68],
+      [78.08, 347.56],
+      [521.92, 347.56],
+      [300, 475.6],
+    ] as const;
+    const snapshot = safeSnapshot({
+      currentNo: rect(278, 328, 44, 44),
+      yes: rect(424, 328, 44, 44),
+      protectedRects: blockedCenters.map(([x, y]) => rect(x - 1, y - 1, 2, 2)),
+    });
+    const current = center(snapshot.currentNo);
+
+    const pose = chooseSafeNoPose(snapshot, {
+      intent: "plane",
+      attempt: 2,
+      currentRotation: 0,
+    });
+
+    expect(pose).not.toBeNull();
+    expect(Math.hypot(pose!.centerX - current.x, pose!.centerY - current.y))
+      .toBeGreaterThanOrEqual(64);
+    expect(isSafeNoRect(snapshot, poseRect(pose!, snapshot.noHitSize))).toBe(true);
+  });
 });
 
 class StyleStub {

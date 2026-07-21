@@ -138,9 +138,10 @@ test("Paper Plane folds before flight without changing NO semantics", async ({ p
   await settleLetter(page);
 
   const no = page.locator("[data-no]");
+  const origin = await centerOf(page, "[data-no]");
   await no.click();
   const timing = await seekTrickAnimations(page, 0.50);
-  expect(timing.maxDuration).toBeGreaterThanOrEqual(1_500);
+  expect(timing.maxDuration).toBeGreaterThanOrEqual(1_800);
   await expect(page.locator(".trick-plane-fold[data-trick-artifact]")).toBeAttached();
   await expect(page.locator(".trick-plane-crease")).toHaveCount(2);
   const outline = page.locator(".trick-plane-outline[data-trick-artifact]");
@@ -180,6 +181,9 @@ test("Paper Plane folds before flight without changing NO semantics", async ({ p
 
   await resumeTrickAnimations(page);
   await waitForTrickIdle(page);
+  const landing = await centerOf(page, "[data-no]");
+  expect(Math.hypot(landing.x - origin.x, landing.y - origin.y))
+    .toBeGreaterThanOrEqual(56);
   await expect(page.locator(".trick-plane-fold")).toHaveCount(0);
   await expect(page.locator(".trick-plane-outline")).toHaveCount(0);
   await expect(page.locator("[data-trick-artifact]")).toHaveCount(0);

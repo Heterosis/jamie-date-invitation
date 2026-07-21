@@ -580,7 +580,6 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
     expect(creaseTwoFrames[2]).toMatchObject({ offset: 0.30, opacity: 1 });
     expect(creaseTwoFrames[3]).toMatchObject({ offset: 0.80, opacity: 1 });
     for (const creaseAnimation of creaseAnimations) {
-      expect(creaseAnimation.options.duration).toBe(1_500);
       expect(creaseAnimation.options.easing).toBe("cubic-bezier(.3,.1,.2,1)");
       expect(creaseAnimation.options.fill).toBe("both");
       expect(keyframesOf(creaseAnimation).at(-1)).toMatchObject({
@@ -588,10 +587,10 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
         rotate: "0deg",
       });
     }
-    expect(motion.options.duration).toBe(1_500);
-    expect(face.options.duration).toBe(1_500);
-    expect(label.options.duration).toBe(1_500);
-    expect(result.fallbackMs).toBe(1_750);
+    expect(fixture.animationCalls).toHaveLength(6);
+    expect(fixture.animationCalls.every(({ options }) => options.duration === 1_800))
+      .toBe(true);
+    expect(result.fallbackMs).toBe(2_050);
     expect(result.preview.target.noPose).toEqual(SAFE_POSE);
   });
 
@@ -1058,7 +1057,7 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
     ],
     ["seat-swap", { swapped: true }, "commit-target", 900],
     ["cupid-magnet", { noPose: SAFE_POSE }, "commit-target", 1_050],
-    ["paper-plane", { noPose: SAFE_POSE }, "commit-target", 1_750],
+    ["paper-plane", { noPose: SAFE_POSE }, "commit-target", 2_050],
     ["yes-garden", {}, "transient", 2_300],
     ["dramatic-excuse", {}, "transient", 2_050],
     ["spotlight", {}, "transient", 2_150],
