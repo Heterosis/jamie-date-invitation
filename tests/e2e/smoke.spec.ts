@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { githubPagesBase } from "../../src/build/github-pages-base";
 
 test("loads the invitation shell", async ({ page }) => {
   await page.goto("/?to=Jamie");
@@ -20,10 +21,14 @@ test("serves an SVG favicon", async ({ page }) => {
   await expect(favicon, "Favicon link must declare SVG content").toHaveAttribute("type", "image/svg+xml");
 
   const faviconUrl = await favicon.evaluate((element) => (element as HTMLLinkElement).href);
-  const expectedFaviconUrl = new URL("/favicon.svg", page.url()).href;
+  const expectedBasePath = githubPagesBase(
+    process.env.GITHUB_REPOSITORY,
+    process.env.GITHUB_ACTIONS === "true",
+  );
+  const expectedFaviconUrl = new URL(`${expectedBasePath}favicon.svg`, page.url()).href;
   expect(
     faviconUrl,
-    `Favicon must resolve exactly to the root SVG URL ${expectedFaviconUrl}`,
+    `Favicon must resolve exactly to the configured SVG URL ${expectedFaviconUrl}`,
   ).toBe(expectedFaviconUrl);
   const response = await page.request.get(faviconUrl);
 
