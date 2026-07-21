@@ -14,6 +14,7 @@ import {
 } from "./payload-codec";
 
 const textEncoder = new TextEncoder();
+const base64UrlAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 function shareableConfig(search: string): ShareableInvitationConfig {
   const config = parseInvitationConfig(search);
@@ -25,6 +26,28 @@ function shareableConfig(search: string): ShareableInvitationConfig {
 
 function base64UrlEncode(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64url");
+}
+
+function withNoncanonicalTailBits(canonicalToken: string): string {
+  const remainder = canonicalToken.length % 4;
+  if (remainder !== 2 && remainder !== 3) {
+    throw new Error("Test fixture must have unused Base64URL tail bits.");
+  }
+
+  const finalCharacter = canonicalToken.at(-1);
+  const finalValue = finalCharacter === undefined
+    ? -1
+    : base64UrlAlphabet.indexOf(finalCharacter);
+  const unusedBitMask = remainder === 2 ? 0b1111 : 0b0011;
+  if (finalValue < 0 || (finalValue & unusedBitMask) !== 0) {
+    throw new Error("Test fixture must use canonical Base64URL tail bits.");
+  }
+
+  const alternateCharacter = base64UrlAlphabet[finalValue | 0b0001];
+  if (alternateCharacter === undefined) {
+    throw new Error("Could not create a noncanonical Base64URL fixture.");
+  }
+  return canonicalToken.slice(0, -1) + alternateCharacter;
 }
 
 function nodeEnvelope(inflated: Uint8Array, version = 0x01): string {
@@ -147,9 +170,14 @@ describe("invitation payload codec", () => {
   });
 
   it("rejects alternate noncanonical Base64URL tail bits for the same bytes", () => {
-    expect(Buffer.from("AQ", "base64url")).toEqual(Buffer.from("AR", "base64url"));
+    const canonicalToken = nodeEnvelope(textEncoder.encode(tupleJson(referenceConfig)));
+    const alternateToken = withNoncanonicalTailBits(canonicalToken);
 
-    expect(() => decodeInvitationPayload("AR")).toThrow();
+    expect(Buffer.from(alternateToken, "base64url")).toEqual(
+      Buffer.from(canonicalToken, "base64url"),
+    );
+    expect(decodeInvitationPayload(canonicalToken)).toEqual(referenceConfig);
+    expect(() => decodeInvitationPayload(alternateToken)).toThrow();
   });
 
   it("rejects raw-DEFLATE bytes with no version byte", () => {
