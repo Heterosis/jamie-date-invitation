@@ -69,7 +69,7 @@
   .desk .letter { width: min(100%, 510px); min-height: 610px; padding: 70px 23px 58px; }
   .desk .snapshot { width: 82px; top: 18px; left: 9px; }
   .desk .snapshot span { height: 55px; font-size: 27px; }
-  .desk .postage { width: 72px; height: 82px; top: 14px; right: 8px; }
+  .desk .postage { width: 74px; height: 82px; top: 14px; right: 8px; }
   .desk .wax-seal { left: 14px; bottom: 8px; width: 40px; height: 40px; }
   .desk .date-ticket { grid-template-columns: 1fr; }
   .desk .date-ticket div { padding: 9px 4px; }
