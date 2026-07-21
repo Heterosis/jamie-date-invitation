@@ -31,7 +31,7 @@ The magnet is decorative. It must follow the real YES button through Seat Swap, 
 
 ### 4.1 Appearance and placement
 
-Use a single `🧲` glyph as a runner-owned decorative artifact. Position it vertically centered beside the YES seat with a small gap from the button.
+Use a single `🧲` glyph as a runner-owned decorative artifact. Render it at 24 px, vertically centered beside the YES seat, with a 12 px gap from the button. The gap leaves room for the existing 3 px focus outline and 4 px outline offset.
 
 Choose its side from the current button geometry at trick start:
 
@@ -44,13 +44,14 @@ The magnet must sit above the button surface without covering its label or focus
 
 ### 4.2 Motion timeline
 
-Animate the magnet for the same 880 ms as the existing Cupid Magnet travel:
+Animate the magnet for the same 880 ms as the existing Cupid Magnet travel, using these key moments:
 
-1. Start transparent, slightly undersized, and tilted.
-2. Fade in quickly with a small overshoot.
-3. Settle through two restrained alternating tilts to create the approved bounce-and-wiggle effect.
-4. Return close to its resting scale and rotation.
-5. Fade out by the end of the NO travel.
+1. At 0%, start at opacity `0`, 65% scale, `translateY(4px)`, and `-16deg` rotation.
+2. At 18%, reach opacity `1`, 112% scale, `translateY(-4px)`, and `7deg` rotation.
+3. At 42%, settle to 96% scale, `translateY(2px)`, and `-6deg` rotation.
+4. At 66%, rebound to 104% scale, `translateY(-1px)`, and `4deg` rotation.
+5. At 82%, reach resting scale and position with `0deg` rotation.
+6. At 100%, fade to opacity `0` at 90% scale and `-4deg` rotation.
 
 The motion should read as one playful accent rather than continuous shaking. Its positioning remains fixed beside YES while NO is pulled toward YES and then set down.
 
