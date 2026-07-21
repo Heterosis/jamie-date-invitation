@@ -179,6 +179,27 @@ describe("decodeShortInvitationHash", () => {
     expect(() => decodeShortInvitationHash(hash)).toThrow();
   });
 
+  it("rejects duplicate leading hash markers without echoing the fragment", () => {
+    const validHash = buildShortInvitationUrl(
+      "https://example.test/",
+      config,
+      "/",
+    ).hash;
+    const duplicateHash = `#${validHash}`;
+    let caughtError: unknown;
+
+    expect(duplicateHash).toMatch(/^##[A-Za-z0-9_-]+$/);
+    try {
+      decodeShortInvitationHash(duplicateHash);
+    } catch (error) {
+      caughtError = error;
+    }
+
+    expect(caughtError).toBeDefined();
+    expect(String(caughtError)).not.toContain(duplicateHash);
+    expect(String(caughtError)).not.toContain(validHash.slice(1));
+  });
+
   it("does not echo a rejected fragment in its error", () => {
     const privateHash = "#private-marker-4815162342?";
     let caughtError: unknown;
