@@ -41,8 +41,11 @@ test("serves a complete invitation from the configured base URL", async ({ page 
   await expect(page.locator("[data-letter]")).toBeVisible();
   await page.evaluate(async () => { await document.fonts.ready; });
 
-  const favicon = page.locator('link[rel="icon"][type="image/svg+xml"]');
-  await expect(favicon, "Invitation must declare exactly one SVG favicon").toHaveCount(1);
+  const faviconLinks = page.locator('link[rel~="icon"]');
+  await expect(faviconLinks, "Invitation must declare exactly one favicon link").toHaveCount(1);
+  const favicon = faviconLinks.first();
+  await expect(favicon, "Favicon link must use rel=icon").toHaveAttribute("rel", "icon");
+  await expect(favicon, "Favicon link must declare SVG content").toHaveAttribute("type", "image/svg+xml");
   const faviconUrl = await favicon.evaluate((element) => (element as HTMLLinkElement).href);
   const faviconResponse = await page.request.get(faviconUrl);
 
