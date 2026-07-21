@@ -458,9 +458,13 @@ for (const swapped of [false, true]) {
     await seekTrickAnimations(page, 0.55);
     await expect(magnet).toHaveCount(1);
     await expect(magnet).toBeVisible();
-    const during = await page.locator("[data-yes-seat]").evaluate((yesSeat) => {
-      const yes = yesSeat.querySelector<HTMLButtonElement>("[data-yes]")!;
-      const magnet = yesSeat.querySelector<HTMLElement>(".trick-cupid-magnet")!;
+    await expect.poll(async () => Number.parseFloat(await magnet.evaluate(
+      (element) => getComputedStyle(element).opacity,
+    ))).toBeGreaterThan(0.5);
+    const during = await page.evaluate(() => {
+      const yes = document.querySelector<HTMLButtonElement>("[data-yes]");
+      const magnet = document.querySelector<HTMLElement>(".trick-cupid-magnet");
+      if (!yes || !magnet) throw new Error("Missing Cupid Magnet lifecycle elements");
       const center = (element: Element) => {
         const rect = element.getBoundingClientRect();
         return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
