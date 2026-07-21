@@ -244,6 +244,38 @@ describe("chooseSafeNoPose", () => {
       .toBeGreaterThanOrEqual(64);
     expect(isSafeNoRect(snapshot, poseRect(pose!, snapshot.noHitSize))).toBe(true);
   });
+
+  it("bases a local move on the committed pose instead of a rotated measurement", () => {
+    const blockedCenters = [
+      [101.44, 510.52],
+      [498.56, 510.52],
+      [300, 533.8],
+      [154, 440.68],
+      [446, 440.68],
+      [78.08, 347.56],
+      [521.92, 347.56],
+      [300, 475.6],
+    ] as const;
+    const committedCenter = { x: 300, y: 350 };
+    const snapshot = safeSnapshot({
+      currentNo: rect(278, 327.5, 44, 44),
+      yes: rect(424, 328, 44, 44),
+      protectedRects: blockedCenters.map(([x, y]) => rect(x - 1, y - 1, 2, 2)),
+    });
+
+    const pose = chooseSafeNoPose(snapshot, {
+      intent: "plane",
+      attempt: 2,
+      currentRotation: -7,
+      currentCenter: committedCenter,
+    });
+
+    expect(pose).not.toBeNull();
+    expect(Math.hypot(
+      pose!.centerX - committedCenter.x,
+      pose!.centerY - committedCenter.y,
+    )).toBe(64);
+  });
 });
 
 class StyleStub {

@@ -34,6 +34,7 @@ export interface PoseQuery {
   readonly intent: SpatialIntent;
   readonly attempt: number;
   readonly currentRotation: number;
+  readonly currentCenter?: Point;
 }
 
 export function rect(left: number, top: number, width: number, height: number): Rect {
@@ -186,7 +187,7 @@ export function chooseSafeNoPose(
   query: PoseQuery,
 ): NoPose | null {
   const boundary = insetLetterBoundary(snapshot);
-  const current = center(snapshot.currentNo);
+  const current = query.currentCenter ?? center(snapshot.currentNo);
   const currentYes = center(snapshot.yes);
   const offset = normalizedIndex(
     query.attempt + INTENT_SEED[query.intent],
@@ -861,6 +862,9 @@ export function createTrickVisualController(
           intent,
           attempt,
           currentRotation: committed.noPose?.rotation ?? 0,
+          currentCenter: committed.noPose
+            ? { x: committed.noPose.centerX, y: committed.noPose.centerY }
+            : undefined,
         });
       } finally {
         restoreMotion();

@@ -51,6 +51,9 @@ async function measureNoGeometry(page: Page, origin: Center): Promise<NoGeometry
     };
     const poseX = Number.parseFloat(seat.style.getPropertyValue("--no-pose-x")) || 0;
     const poseY = Number.parseFloat(seat.style.getPropertyValue("--no-pose-y")) || 0;
+    const letterTransform = new DOMMatrixReadOnly(getComputedStyle(letter).transform);
+    const expectedViewportX = letterTransform.a * poseX + letterTransform.c * poseY;
+    const expectedViewportY = letterTransform.b * poseX + letterTransform.d * poseY;
     const previousTransition = seat.style.transition;
     const previousX = seat.style.getPropertyValue("--no-pose-x");
     const previousY = seat.style.getPropertyValue("--no-pose-y");
@@ -85,8 +88,8 @@ async function measureNoGeometry(page: Page, origin: Center): Promise<NoGeometry
       hitHeight: no.offsetHeight,
       poseX,
       poseY,
-      absoluteTranslation: Math.abs(center.x - anchor.x - poseX) < 1
-        && Math.abs(center.y - anchor.y - poseY) < 1,
+      absoluteTranslation: Math.abs(center.x - anchor.x - expectedViewportX) < 1
+        && Math.abs(center.y - anchor.y - expectedViewportY) < 1,
     };
   }, origin);
 }
