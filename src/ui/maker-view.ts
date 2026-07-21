@@ -99,6 +99,35 @@ function readValues(root: ParentNode): MakerValues {
   };
 }
 
+function copyCapturedText(generated: HTMLInputElement, capturedText: string): boolean {
+  let temporary: HTMLTextAreaElement | null = null;
+  let copyTarget: HTMLInputElement | HTMLTextAreaElement = generated;
+
+  try {
+    if (generated.value !== capturedText) {
+      temporary = document.createElement("textarea");
+      temporary.value = capturedText;
+      temporary.readOnly = true;
+      temporary.tabIndex = -1;
+      temporary.setAttribute("aria-hidden", "true");
+      temporary.setAttribute("data-copy-fallback", "");
+      temporary.style.position = "fixed";
+      temporary.style.left = "-10000px";
+      temporary.style.top = "0";
+      temporary.style.opacity = "0";
+      document.body.append(temporary);
+      copyTarget = temporary;
+    }
+
+    copyTarget.select();
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    temporary?.remove();
+  }
+}
+
 export function mountMaker(root: HTMLElement, config: InvitationConfig): void {
   root.innerHTML = `
     <main class="maker">
@@ -205,12 +234,7 @@ export function mountMaker(root: HTMLElement, config: InvitationConfig): void {
       await navigator.clipboard.writeText(shareUrlText);
       copied = true;
     } catch {
-      generated.select();
-      try {
-        copied = document.execCommand("copy");
-      } catch {
-        copied = false;
-      }
+      copied = copyCapturedText(generated, shareUrlText);
     }
     status.textContent = copied
       ? "Invitation link copied ♥"

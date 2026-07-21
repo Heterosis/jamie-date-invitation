@@ -156,6 +156,77 @@ test("copies the generated link only when the form is ready", async ({ page, con
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(generated);
 });
 
+test("fallback copy keeps the URL captured before an async clipboard rejection", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.addInitScript(() => {
+    type CopyRaceWindow = Window & {
+      clipboardWriteStarted?: boolean;
+      rejectClipboardWrite?: () => void;
+      fallbackSelection?: { readonly text: string; readonly temporary: boolean };
+    };
+    const raceWindow = window as CopyRaceWindow;
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: () => new Promise<void>((_resolve, reject) => {
+          raceWindow.clipboardWriteStarted = true;
+          raceWindow.rejectClipboardWrite = () => reject(new Error("clipboard denied later"));
+        }),
+      },
+    });
+    document.execCommand = () => {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)) {
+        throw new Error("Fallback copy did not select a text control");
+      }
+      const start = active.selectionStart ?? 0;
+      const end = active.selectionEnd ?? start;
+      raceWindow.fallbackSelection = {
+        text: active.value.slice(start, end),
+        temporary: active.hasAttribute("data-copy-fallback"),
+      };
+      return true;
+    };
+  });
+  await page.goto("/?make=1");
+  await page.getByLabel("From").fill("Alex");
+  await fillSchedule(page);
+
+  const generated = page.getByLabel("Generated invitation URL");
+  const preview = page.locator('iframe[title="Invitation preview"]');
+  const originalUrl = await generated.inputValue();
+  expectOpaqueShortUrl(originalUrl);
+  await page.getByRole("button", { name: "Copy invitation link" }).click();
+  await expect.poll(() => page.evaluate(
+    () => (window as Window & { clipboardWriteStarted?: boolean }).clipboardWriteStarted,
+  )).toBe(true);
+
+  await page.getByLabel("From").fill("Riley");
+  const updatedUrl = await generated.inputValue();
+  expectOpaqueShortUrl(updatedUrl);
+  expect(updatedUrl).not.toBe(originalUrl);
+  await expect(preview).toHaveAttribute("src", updatedUrl);
+
+  await page.evaluate(() => {
+    const reject = (window as Window & { rejectClipboardWrite?: () => void }).rejectClipboardWrite;
+    if (!reject) throw new Error("Clipboard rejection trigger was not installed");
+    reject();
+  });
+
+  await expect(page.getByText("Invitation link copied ♥")).toBeVisible();
+  const fallbackSelection = await page.evaluate(
+    () => (window as Window & {
+      fallbackSelection?: { readonly text: string; readonly temporary: boolean };
+    }).fallbackSelection,
+  );
+  expect(fallbackSelection).toEqual({ text: originalUrl, temporary: true });
+  await expect(generated).toHaveValue(updatedUrl);
+  await expect(preview).toHaveAttribute("src", updatedUrl);
+  await expect(page.locator("[data-copy-fallback]")).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
+});
+
 test("passes the exact generated preview URL to native sharing", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "share", {
