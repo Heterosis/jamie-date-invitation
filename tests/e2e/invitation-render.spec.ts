@@ -31,6 +31,51 @@ test("fits a 320px viewport without horizontal scrolling", async ({ page }) => {
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
+test("keeps the postage contents inside the note at a narrow mobile viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 430, height: 932 });
+  await page.goto("/?to=Jamie");
+  await page.evaluate(async () => { await document.fonts.ready; });
+
+  const metrics = await page.locator(".postage").evaluate((postage) => {
+    const originalTransform = postage.style.transform;
+    postage.style.transform = "none";
+
+    const style = getComputedStyle(postage);
+    const note = postage.getBoundingClientRect();
+    const contents = Array.from(postage.children, (child) => {
+      const bounds = child.getBoundingClientRect();
+      return {
+        tag: child.tagName.toLowerCase(),
+        left: bounds.left,
+        right: bounds.right,
+        top: bounds.top,
+        bottom: bounds.bottom,
+      };
+    });
+
+    postage.style.transform = originalTransform;
+
+    return {
+      note: {
+        left: note.left + Number.parseFloat(style.borderLeftWidth),
+        right: note.right - Number.parseFloat(style.borderRightWidth),
+        top: note.top + Number.parseFloat(style.borderTopWidth),
+        bottom: note.bottom - Number.parseFloat(style.borderBottomWidth),
+      },
+      contents,
+    };
+  });
+
+  const safeInset = 2;
+  expect(metrics.contents).toHaveLength(2);
+  for (const content of metrics.contents) {
+    expect.soft(content.left, `${content.tag} left edge`).toBeGreaterThanOrEqual(metrics.note.left + safeInset);
+    expect.soft(content.right, `${content.tag} right edge`).toBeLessThanOrEqual(metrics.note.right - safeInset);
+    expect.soft(content.top, `${content.tag} top edge`).toBeGreaterThanOrEqual(metrics.note.top + safeInset);
+    expect.soft(content.bottom, `${content.tag} bottom edge`).toBeLessThanOrEqual(metrics.note.bottom - safeInset);
+  }
+});
+
 test("contains long unbroken invitation copy and actions at 320px", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 760 });
   await page.goto(`/?to=${"W".repeat(40)}`);
