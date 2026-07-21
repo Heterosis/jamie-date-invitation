@@ -14,7 +14,15 @@ Open `http://localhost:5173/?make=1` to generate and preview an invitation link.
 
 ## URL contract
 
-Pass invitation data as query parameters. For example:
+Once its required fields are valid, the maker emits a compact invitation URL and uses that same URL for preview, copy, and sharing:
+
+```text
+<site-base>/s/#<payload>
+```
+
+The payload is an opaque, versioned, compressed encoding of the invitation. It is not intended for manual editing, but it is not encryption and must not be treated as secret. Opening `/s/` without a valid payload shows generic recipient guidance to ask the sender for a new link.
+
+Existing root query URLs remain supported as the legacy, manual, backward-compatible contract. For example:
 
 ```text
 /?to=Jamie&from=Alex&date=2026-08-08&time=19%3A30&tz=Asia%2FSingapore&duration=120&place=Botanic+Gardens&telegram=alex_date&notifyName=Alex
@@ -70,7 +78,10 @@ npm test
 npm run test:e2e
 npm run typecheck
 npm run build
+npm run test:e2e:preview
 ```
+
+`npm run test:e2e:preview` checks the actual built root and `/s/` static entries, their assets, and the MPA missing-route `404`. `npm run check` runs the complete unit, browser, build, and production-preview gate.
 
 `tests/e2e/live-smoke.spec.ts` skips during normal local E2E runs. To check an already deployed Pages site, provide its trailing-slash base URL explicitly:
 
@@ -80,8 +91,8 @@ npx playwright test tests/e2e/live-smoke.spec.ts
 Remove-Item Env:PLAYWRIGHT_BASE_URL
 ```
 
-On `main`, `.github/workflows/pages.yml` runs unit tests, local browser tests, a production repository-base build, deploys the `dist` artifact to the `github-pages` environment, and then runs the desktop live smoke test against the deployed URL.
+On `main`, `.github/workflows/pages.yml` runs unit tests, local browser tests, a production repository-base build, and production-preview verification before uploading and deploying the `dist` artifact to the `github-pages` environment. It then runs the desktop live smoke test against the deployed URL.
 
 ## Privacy
 
-The app has no backend, analytics, tracking pixels, cookies, or local storage, and it keeps maker form state only in memory. Invitation values are part of the shared URL, so anyone who receives or records that URL can read them; do not put secrets in the query string. Google Calendar and Telegram receive prefilled details only after Jamie explicitly clicks their respective handoff button, and Jamie must still save or send them.
+The app has no backend, database, analytics, tracking pixels, cookies, or browser storage, and it keeps maker form state only in memory. In a compact URL, the fragment is not sent to GitHub Pages in the HTTP request, but it remains visible to browser/client code and can persist in browser history, clipboards, and shared messages. Both compact and legacy query URLs can disclose invitation data to anyone who receives or records them; do not put secrets in either form. Google Calendar and Telegram receive prefilled details only after Jamie explicitly clicks their respective handoff button, and Jamie must still save or send them.
