@@ -135,3 +135,39 @@ for (const { name, route, token } of invalidRoutes()) {
     expect(pageErrors).toEqual([]);
   });
 }
+
+test("a maker-generated direct Telegram draft includes the exact short URL once", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/?make=1");
+  await page.getByLabel("From").fill("Alex");
+  await page.getByLabel("Date").fill("2026-08-08");
+  await page.getByLabel("Time").fill("19:30");
+  await page.getByLabel("Telegram username").fill("alex_date");
+  await page.getByLabel("Telegram display name").fill("Alex");
+
+  const generated = await page.getByLabel("Generated invitation URL").inputValue();
+  const generatedUrl = new URL(generated);
+  expect(generatedUrl.pathname).toBe("/s/");
+  expect(generatedUrl.search).toBe("");
+  expect(generatedUrl.hash).toMatch(/^#[A-Za-z0-9_-]+$/);
+
+  const invitationPage = await context.newPage();
+  await invitationPage.goto(generated);
+  await expect.poll(() => invitationPage.evaluate(() => location.href)).toBe(generated);
+  await invitationPage.getByRole("button", { name: "YES, I'D LOVE TO" }).click();
+
+  const telegram = invitationPage.getByRole("link", { name: "TELL ALEX ON TELEGRAM" });
+  await expect(telegram).toBeVisible();
+  const href = await telegram.getAttribute("href");
+  if (!href) throw new Error("Missing direct Telegram URL");
+  const telegramUrl = new URL(href);
+  expect(telegramUrl.origin + telegramUrl.pathname).toBe("https://t.me/alex_date");
+  const draft = telegramUrl.searchParams.get("text");
+  if (draft === null) throw new Error("Missing direct Telegram draft");
+  expect(draft).toContain(generated);
+  expect(draft.split(generated)).toHaveLength(2);
+
+  await invitationPage.close();
+});

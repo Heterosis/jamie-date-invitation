@@ -1,5 +1,7 @@
 import { createEventWindow } from "../domain/date-time";
 import { parseInvitationConfig } from "../domain/invitation-config";
+import { isShareableInvitationConfig } from "../short-url/payload-schema";
+import { buildShortInvitationUrl } from "../short-url/short-url";
 
 export interface MakerValues {
   readonly to: string;
@@ -14,6 +16,12 @@ export interface MakerValues {
   readonly telegram: string;
   readonly notifyName: string;
   readonly tgText: string;
+}
+
+export interface MakerUrlState {
+  readonly errors: readonly string[];
+  readonly previewUrl: URL;
+  readonly shareUrl: URL | null;
 }
 
 const FIELD_NAMES = [
@@ -55,6 +63,27 @@ export function buildMakerUrl(base: string, values: MakerValues): URL {
     if (value) url.searchParams.set(field, value);
   }
   return url;
+}
+
+export function buildMakerUrlState(
+  currentHref: string,
+  basePath: string,
+  values: MakerValues,
+): MakerUrlState {
+  const normalized = normalizeMakerDefaults(values);
+  const legacyUrl = buildMakerUrl(currentHref, normalized);
+  const errors = validateMakerValues(normalized);
+  if (errors.length > 0) {
+    return { errors, previewUrl: legacyUrl, shareUrl: null };
+  }
+
+  const config = parseInvitationConfig(legacyUrl.search);
+  if (!isShareableInvitationConfig(config)) {
+    throw new TypeError("Validated maker values were not shareable.");
+  }
+
+  const shortUrl = buildShortInvitationUrl(currentHref, config, basePath);
+  return { errors, previewUrl: shortUrl, shareUrl: shortUrl };
 }
 
 export function validateMakerValues(values: MakerValues): string[] {

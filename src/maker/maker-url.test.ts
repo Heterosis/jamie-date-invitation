@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { parseInvitationConfig } from "../domain/invitation-config";
+import { decodeShortInvitationHash } from "../short-url/short-url";
 import {
   buildMakerUrl,
+  buildMakerUrlState,
   normalizeMakerDefaults,
   validateMakerValues,
   type MakerValues,
@@ -23,6 +25,109 @@ const valid: MakerValues = {
 };
 
 describe("maker URL", () => {
+  it("builds one opaque short URL for a valid preview and share", () => {
+    const state = buildMakerUrlState(
+      "https://example.test/date/?make=1#maker",
+      "/date/",
+      valid,
+    );
+
+    expect(state.errors).toEqual([]);
+    expect(state.shareUrl).not.toBeNull();
+    expect(state.previewUrl.toString()).toBe(state.shareUrl?.toString());
+    expect(state.previewUrl.origin).toBe("https://example.test");
+    expect(state.previewUrl.pathname).toBe("/date/s/");
+    expect(state.previewUrl.search).toBe("");
+    expect(state.previewUrl.hash).toMatch(/^#[A-Za-z0-9_-]+$/);
+
+    const publicUrl = state.previewUrl.toString();
+    for (const privateText of [
+      "make=",
+      "to=",
+      "from=",
+      "date=",
+      "telegram=",
+      "Jamie",
+      "Alex",
+      "Botanic",
+    ]) {
+      expect(publicUrl).not.toContain(privateText);
+    }
+    expect(decodeShortInvitationHash(state.previewUrl.hash)).toEqual(
+      parseInvitationConfig(buildMakerUrl("https://example.test/", valid).search),
+    );
+  });
+
+  it("resolves a root deployment base without preserving maker query or hash", () => {
+    const state = buildMakerUrlState(
+      "https://example.test/?make=1#maker",
+      "/",
+      valid,
+    );
+
+    expect(state.previewUrl.pathname).toBe("/s/");
+    expect(state.previewUrl.search).toBe("");
+    expect(state.shareUrl?.toString()).toBe(state.previewUrl.toString());
+  });
+
+  it("keeps an invalid state private while its legacy preview reflects current values", () => {
+    const state = buildMakerUrlState(
+      "https://example.test/date/?make=1#maker",
+      "/date/",
+      { ...valid, from: " Current Alex ", date: "", time: "20:45" },
+    );
+
+    expect(state.errors).toEqual(["Choose a valid date."]);
+    expect(state.shareUrl).toBeNull();
+    expect(state.previewUrl.pathname).toBe("/date/");
+    expect(state.previewUrl.hash).toBe("");
+    expect(state.previewUrl.searchParams.has("make")).toBe(false);
+    expect(state.previewUrl.searchParams.get("from")).toBe("Current Alex");
+    expect(state.previewUrl.searchParams.get("date")).toBeNull();
+    expect(state.previewUrl.searchParams.get("time")).toBe("20:45");
+  });
+
+  it.each([
+    ["duration", { duration: "14" }, "Choose a whole duration from 15 to 720 minutes."],
+    ["time zone", { tz: "Mars/Olympus" }, "Choose a valid IANA time zone."],
+    [
+      "DST gap",
+      { date: "2026-03-08", time: "02:30", tz: "America/New_York" },
+      "That local date and time is ambiguous or does not exist in this time zone.",
+    ],
+  ])("never exposes a share URL for an invalid %s", (_kind, overrides, message) => {
+    const state = buildMakerUrlState(
+      "https://example.test/?make=1#maker",
+      "/",
+      { ...valid, ...overrides },
+    );
+
+    expect(state.errors).toEqual([message]);
+    expect(state.shareUrl).toBeNull();
+    expect(state.previewUrl.pathname).toBe("/");
+    expect(state.previewUrl.search).not.toBe("");
+    expect(state.previewUrl.hash).toBe("");
+  });
+
+  it("normalizes blank schedule defaults before validation and short encoding", () => {
+    const browserNormalized = normalizeMakerDefaults(
+      { ...valid, tz: "", duration: "" },
+      "America/New_York",
+    );
+    const state = buildMakerUrlState(
+      "https://example.test/?make=1",
+      "/",
+      browserNormalized,
+    );
+
+    expect(state.errors).toEqual([]);
+    expect(state.shareUrl).not.toBeNull();
+    expect(decodeShortInvitationHash(state.previewUrl.hash)).toMatchObject({
+      tz: "America/New_York",
+      duration: 120,
+    });
+  });
+
   it("round-trips every field through the production parser", () => {
     const url = buildMakerUrl("https://example.test/date/?make=1", valid);
     expect(url.searchParams.has("make")).toBe(false);

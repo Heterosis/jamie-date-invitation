@@ -1,8 +1,8 @@
 import type { InvitationConfig } from "../domain/invitation-config";
 import {
-  buildMakerUrl,
+  buildMakerUrlState,
   normalizeMakerDefaults,
-  validateMakerValues,
+  type MakerUrlState,
   type MakerValues,
 } from "../maker/maker-url";
 
@@ -166,23 +166,23 @@ export function mountMaker(root: HTMLElement, config: InvitationConfig): void {
   input(form, "notifyName").value = config.notifyName === "ME" ? "" : config.notifyName;
   input(form, "tgText").value = config.tgText ?? "";
 
-  const refresh = (): void => {
+  const refresh = (): MakerUrlState => {
     const values = normalizeMakerDefaults(readValues(form), browserTimeZone);
-    const url = buildMakerUrl(location.href, values);
-    const errors = validateMakerValues(values);
-    generated.value = url.toString();
-    preview.src = url.toString();
-    copy.disabled = errors.length > 0;
-    share.disabled = errors.length > 0;
-    status.textContent = errors.length ? errors.join(" ") : "Ready to send ♥";
+    const state = buildMakerUrlState(location.href, import.meta.env.BASE_URL, values);
+    generated.value = state.shareUrl?.toString() ?? "";
+    preview.src = state.previewUrl.toString();
+    copy.disabled = state.shareUrl === null;
+    share.disabled = state.shareUrl === null;
+    status.textContent = state.errors.length ? state.errors.join(" ") : "Ready to send ♥";
+    return state;
   };
 
-  const materializeDefaults = (): void => {
+  const materializeDefaults = (): MakerUrlState => {
     const rawValues = readValues(form);
     const normalized = normalizeMakerDefaults(rawValues, browserTimeZone);
     if (!rawValues.tz.trim()) input(form, "tz").value = normalized.tz;
     if (!rawValues.duration.trim()) input(form, "duration").value = normalized.duration;
-    refresh();
+    return refresh();
   };
 
   form.addEventListener("input", refresh);
@@ -196,10 +196,13 @@ export function mountMaker(root: HTMLElement, config: InvitationConfig): void {
   form.addEventListener("submit", (event) => event.preventDefault());
   copy.addEventListener("click", async () => {
     if (copy.disabled) return;
-    materializeDefaults();
+    const state = materializeDefaults();
+    const shareUrl = state.shareUrl;
+    if (!shareUrl) return;
+    const shareUrlText = shareUrl.toString();
     let copied = false;
     try {
-      await navigator.clipboard.writeText(generated.value);
+      await navigator.clipboard.writeText(shareUrlText);
       copied = true;
     } catch {
       generated.select();
@@ -218,9 +221,11 @@ export function mountMaker(root: HTMLElement, config: InvitationConfig): void {
     share.hidden = false;
     share.addEventListener("click", async () => {
       if (share.disabled) return;
-      materializeDefaults();
+      const state = materializeDefaults();
+      const shareUrl = state.shareUrl;
+      if (!shareUrl) return;
       try {
-        await navigator.share({ title: "A tiny invitation", url: generated.value });
+        await navigator.share({ title: "A tiny invitation", url: shareUrl.toString() });
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
           status.textContent = "Sharing failed — copy the invitation link instead.";
