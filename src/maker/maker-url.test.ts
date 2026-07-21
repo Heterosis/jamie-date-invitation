@@ -58,6 +58,26 @@ describe("maker URL", () => {
     );
   });
 
+  it("builds one editable query URL for a valid preview and share when selected", () => {
+    const state = buildMakerUrlState(
+      "https://example.test/date/index.html?make=1#maker",
+      "/date/",
+      valid,
+      "query",
+    );
+
+    expect(state.errors).toEqual([]);
+    expect(state.shareUrl).not.toBeNull();
+    expect(state.previewUrl.toString()).toBe(state.shareUrl?.toString());
+    expect(state.previewUrl.origin).toBe("https://example.test");
+    expect(state.previewUrl.pathname).toBe("/date/");
+    expect(state.previewUrl.hash).toBe("");
+    expect(state.previewUrl.searchParams.has("make")).toBe(false);
+    expect(parseInvitationConfig(state.previewUrl.search)).toEqual(
+      parseInvitationConfig(buildMakerUrl("https://example.test/", valid).search),
+    );
+  });
+
   it("resolves a root deployment base without preserving maker query or hash", () => {
     const state = buildMakerUrlState(
       "https://example.test/?make=1#maker",
@@ -85,6 +105,21 @@ describe("maker URL", () => {
     expect(state.previewUrl.searchParams.get("from")).toBe("Current Alex");
     expect(state.previewUrl.searchParams.get("date")).toBeNull();
     expect(state.previewUrl.searchParams.get("time")).toBe("20:45");
+  });
+
+  it("never exposes an invalid query URL as shareable", () => {
+    const state = buildMakerUrlState(
+      "https://example.test/date/?make=1#maker",
+      "/date/",
+      { ...valid, date: "" },
+      "query",
+    );
+
+    expect(state.errors).toEqual(["Choose a valid date."]);
+    expect(state.shareUrl).toBeNull();
+    expect(state.previewUrl.pathname).toBe("/date/");
+    expect(state.previewUrl.hash).toBe("");
+    expect(state.previewUrl.searchParams.has("make")).toBe(false);
   });
 
   it.each([

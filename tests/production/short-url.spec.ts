@@ -156,6 +156,31 @@ test("serves a real built short invitation and repository-base assets", async ({
     await makerPage.getByLabel("Invitation note").fill("Bring your favorite story.");
 
     const generatedField = makerPage.getByLabel("Generated invitation URL");
+    await makerPage.getByLabel("URL format").selectOption("query");
+    const generatedQueryHref = await generatedField.inputValue();
+    const generatedQueryUrl = new URL(generatedQueryHref);
+    expect(generatedQueryUrl.origin).toBe(configuredBase.origin);
+    expect(generatedQueryUrl.pathname).toBe(configuredBase.pathname);
+    expect(generatedQueryUrl.hash).toBe("");
+    expect(generatedQueryUrl.searchParams.has("make")).toBe(false);
+    expect(generatedQueryUrl.searchParams.get("to")).toBe("Production Morgan");
+    expect(generatedQueryUrl.searchParams.get("from")).toBe("Production Riley");
+    await expect(makerPage.locator('iframe[title="Invitation preview"]')).toHaveAttribute(
+      "src",
+      generatedQueryHref,
+    );
+
+    const queryRecipientPage = await makerContext.newPage();
+    const queryResponse = await queryRecipientPage.goto(generatedQueryHref);
+    if (!queryResponse) throw new Error("Query-link navigation had no main document response");
+    expect(queryResponse.status(), "Query-link document must return exact HTTP 200").toBe(200);
+    await expect(queryRecipientPage.getByRole("heading", {
+      level: 1,
+      name: "Production Morgan, will you go on a date with me?",
+    })).toBeVisible();
+    await queryRecipientPage.close();
+
+    await makerPage.getByLabel("URL format").selectOption("short");
     await expect(generatedField).not.toHaveValue("");
     const generatedHref = await generatedField.inputValue();
     const generatedUrl = new URL(generatedHref);

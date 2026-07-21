@@ -14,7 +14,7 @@ Open `http://localhost:5173/?make=1` to generate and preview an invitation link.
 
 ## URL contract
 
-Once its required fields are valid, the maker emits a compact invitation URL and uses that same URL for preview, copy, and sharing:
+Once its required fields are valid, the maker uses the selected URL format consistently for preview, copy, and sharing. It defaults to a compact invitation URL:
 
 ```text
 <site-base>/s/#<payload>
@@ -22,7 +22,7 @@ Once its required fields are valid, the maker emits a compact invitation URL and
 
 The payload is an opaque, versioned, compressed encoding of the invitation. It is not intended for manual editing, but it is not encryption and must not be treated as secret. Opening `/s/` without a valid payload shows generic recipient guidance to ask the sender for a new link.
 
-Existing root query URLs remain supported as the legacy, manual, backward-compatible contract. For example:
+Select `Query URL (readable)` in the maker to generate the legacy, manual, backward-compatible root query contract instead. For example:
 
 ```text
 /?to=Jamie&from=Alex&date=2026-08-08&time=19%3A30&tz=Asia%2FSingapore&duration=120&place=Botanic+Gardens&telegram=alex_date&notifyName=Alex
@@ -95,4 +95,4 @@ On `main`, `.github/workflows/pages.yml` runs unit tests, local browser tests, a
 
 ## Privacy
 
-The app has no backend, database, analytics, tracking pixels, cookies, or browser storage, and it keeps maker form state only in memory. In a compact URL, the fragment is not sent to GitHub Pages in the HTTP request, but it remains visible to browser/client code and can persist in browser history, clipboards, and shared messages. Both compact and legacy query URLs can disclose invitation data to anyone who receives or records them; do not put secrets in either form. Google Calendar and Telegram receive prefilled details only after Jamie explicitly clicks their respective handoff button, and Jamie must still save or send them.
+The app has no backend, database, analytics, tracking pixels, cookies, or browser storage, and it keeps maker form state only in memory. In a compact URL, the fragment is not sent to GitHub Pages in the HTTP request, but it remains visible to browser/client code and can persist in browser history, clipboards, and shared messages. A query URL is sent as part of the HTTP request and may also appear in request logs or referrers. Both formats can disclose invitation data to anyone who receives or records them; do not put secrets in either form. Google Calendar and Telegram receive prefilled details only after Jamie explicitly clicks their respective handoff button, and Jamie must still save or send them.

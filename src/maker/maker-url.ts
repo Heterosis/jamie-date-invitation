@@ -24,6 +24,8 @@ export interface MakerUrlState {
   readonly shareUrl: URL | null;
 }
 
+export type MakerUrlFormat = "short" | "query";
+
 const FIELD_NAMES = [
   "to",
   "from",
@@ -69,9 +71,11 @@ export function buildMakerUrlState(
   currentHref: string,
   basePath: string,
   values: MakerValues,
+  format: MakerUrlFormat = "short",
 ): MakerUrlState {
   const normalized = normalizeMakerDefaults(values);
-  const legacyUrl = buildMakerUrl(currentHref, normalized);
+  const siteBaseUrl = new URL(basePath, currentHref);
+  const legacyUrl = buildMakerUrl(siteBaseUrl.toString(), normalized);
   const errors = validateMakerValues(normalized);
   if (errors.length > 0) {
     return { errors, previewUrl: legacyUrl, shareUrl: null };
@@ -80,6 +84,10 @@ export function buildMakerUrlState(
   const config = parseInvitationConfig(legacyUrl.search);
   if (!isShareableInvitationConfig(config)) {
     throw new TypeError("Validated maker values were not shareable.");
+  }
+
+  if (format === "query") {
+    return { errors, previewUrl: legacyUrl, shareUrl: legacyUrl };
   }
 
   const shortUrl = buildShortInvitationUrl(currentHref, config, basePath);

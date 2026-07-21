@@ -2,6 +2,7 @@ import type { InvitationConfig } from "../domain/invitation-config";
 import {
   buildMakerUrlState,
   normalizeMakerDefaults,
+  type MakerUrlFormat,
   type MakerUrlState,
   type MakerValues,
 } from "../maker/maker-url";
@@ -99,6 +100,10 @@ function readValues(root: ParentNode): MakerValues {
   };
 }
 
+function readUrlFormat(select: HTMLSelectElement): MakerUrlFormat {
+  return select.value === "query" ? "query" : "short";
+}
+
 function copyCapturedText(generated: HTMLInputElement, capturedText: string): boolean {
   let temporary: HTMLTextAreaElement | null = null;
   let copyTarget: HTMLInputElement | HTMLTextAreaElement = generated;
@@ -150,6 +155,11 @@ export function mountMaker(root: HTMLElement, config: InvitationConfig): void {
           <label>Telegram username<input name="telegram" maxlength="33" placeholder="without @" /></label>
           <label>Telegram display name<input name="notifyName" maxlength="40" /></label>
           <label class="wide">Custom Telegram draft<textarea name="tgText" maxlength="500" rows="3"></textarea></label>
+          <label class="wide">URL format<select name="urlFormat" aria-describedby="maker-url-format-note">
+            <option value="short">Short URL (compact)</option>
+            <option value="query">Query URL (readable)</option>
+          </select></label>
+          <p class="maker-format-note wide" id="maker-url-format-note">Short URLs keep details in an opaque fragment; neither format is encrypted. Query URLs expose details in the request and may be logged.</p>
           <p class="maker-status" role="status" data-maker-status></p>
           <label class="wide">Generated invitation URL<input name="generated" aria-label="Generated invitation URL" readonly /></label>
           <div class="maker-actions wide">
@@ -172,6 +182,7 @@ export function mountMaker(root: HTMLElement, config: InvitationConfig): void {
   const copy = root.querySelector<HTMLButtonElement>("[data-copy]")!;
   const share = root.querySelector<HTMLButtonElement>("[data-share]")!;
   const reset = root.querySelector<HTMLButtonElement>("[data-reset]")!;
+  const urlFormat = root.querySelector<HTMLSelectElement>('[name="urlFormat"]')!;
   let browserTimeZone = "Asia/Singapore";
   try {
     browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || browserTimeZone;
@@ -197,7 +208,12 @@ export function mountMaker(root: HTMLElement, config: InvitationConfig): void {
 
   const refresh = (): MakerUrlState => {
     const values = normalizeMakerDefaults(readValues(form), browserTimeZone);
-    const state = buildMakerUrlState(location.href, import.meta.env.BASE_URL, values);
+    const state = buildMakerUrlState(
+      location.href,
+      import.meta.env.BASE_URL,
+      values,
+      readUrlFormat(urlFormat),
+    );
     generated.value = state.shareUrl?.toString() ?? "";
     preview.src = state.previewUrl.toString();
     copy.disabled = state.shareUrl === null;

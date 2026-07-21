@@ -76,6 +76,12 @@
   cursor: pointer;
 }
 
+.maker-format-note {
+  margin: -6px 0 0;
+  color: var(--muted);
+  font: 13px/1.45 var(--hand);
+}
+
 .maker-status {
   grid-column: 1 / -1;
   min-height: 24px;

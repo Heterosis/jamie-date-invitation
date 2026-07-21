@@ -21,6 +21,11 @@ async function fillSchedule(page: import("@playwright/test").Page): Promise<void
 
 test("builds a ready-to-send URL and matching live preview", async ({ page }) => {
   await page.goto("/?make=1");
+  await expect(page.getByLabel("URL format")).toHaveValue("short");
+  await expect(page.getByText(
+    "Short URLs keep details in an opaque fragment; neither format is encrypted. "
+      + "Query URLs expose details in the request and may be logged.",
+  )).toBeVisible();
   await page.getByLabel("From").fill("Alex");
   await page.getByLabel("Date").fill("2026-08-08");
   await page.getByLabel("Time").fill("19:30");
@@ -46,6 +51,37 @@ test("builds a ready-to-send URL and matching live preview", async ({ page }) =>
     name: "Jamie, will you go on a date with me?",
   })).toBeVisible();
   await expect(preview.locator("[data-signature]")).toHaveText("from Alex");
+});
+
+test("switches one ready invitation between short and query URLs", async ({ page }) => {
+  await page.goto("/?make=1");
+  await page.getByLabel("From").fill("Alex");
+  await fillSchedule(page);
+
+  const format = page.getByLabel("URL format");
+  const generated = page.getByLabel("Generated invitation URL");
+  const previewFrame = page.locator('iframe[title="Invitation preview"]');
+
+  await expect(format).toHaveValue("short");
+  expectOpaqueShortUrl(await generated.inputValue());
+
+  await format.selectOption("query");
+  const queryText = await generated.inputValue();
+  const queryUrl = new URL(queryText);
+  expect(queryUrl.pathname).toBe("/");
+  expect(queryUrl.hash).toBe("");
+  expect(queryUrl.searchParams.has("make")).toBe(false);
+  expect(queryUrl.searchParams.get("from")).toBe("Alex");
+  expect(queryUrl.searchParams.get("date")).toBe("2026-08-08");
+  expect(queryUrl.searchParams.get("time")).toBe("19:30");
+  await expect(previewFrame).toHaveAttribute("src", queryText);
+  await expect(page.frameLocator('iframe[title="Invitation preview"]')
+    .locator("[data-signature]")).toHaveText("from Alex");
+
+  await format.selectOption("short");
+  const shortText = await generated.inputValue();
+  expectOpaqueShortUrl(shortText);
+  await expect(previewFrame).toHaveAttribute("src", shortText);
 });
 
 test("refreshes the live preview after successive compact fragment updates", async ({ page }) => {
@@ -178,10 +214,10 @@ test("keeps a substantial deterministic IANA fallback list", async ({ page }) =>
 });
 
 test("copies the generated link only when the form is ready", async ({ page, context }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"], {
-    origin: "http://127.0.0.1:4173",
-  });
   await page.goto("/?make=1");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: new URL(page.url()).origin,
+  });
   const copy = page.getByRole("button", { name: "Copy invitation link" });
   await expect(copy).toBeDisabled();
   await page.getByLabel("Date").fill("2026-08-08");
@@ -288,10 +324,45 @@ test("passes the exact generated preview URL to native sharing", async ({ page }
   expect(sharedUrl).toBe(generated);
 });
 
+test("copies and shares the exact selected query URL", async ({ page, context }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async (data: ShareData) => {
+        (window as Window & { sharedInvitation?: ShareData }).sharedInvitation = data;
+      },
+    });
+  });
+  await page.goto("/?make=1");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: new URL(page.url()).origin,
+  });
+  await fillSchedule(page);
+  await page.getByLabel("URL format").selectOption("query");
+
+  const generated = await page.getByLabel("Generated invitation URL").inputValue();
+  const generatedUrl = new URL(generated);
+  expect(generatedUrl.hash).toBe("");
+  expect(generatedUrl.searchParams.get("date")).toBe("2026-08-08");
+  await expect(page.locator('iframe[title="Invitation preview"]')).toHaveAttribute(
+    "src",
+    generated,
+  );
+
+  await page.getByRole("button", { name: "Copy invitation link" }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(generated);
+
+  await page.getByRole("button", { name: "Share link" }).click();
+  expect(await page.evaluate(
+    () => (window as Window & { sharedInvitation?: ShareData }).sharedInvitation?.url,
+  )).toBe(generated);
+});
+
 test("reset returns to an incomplete private preview", async ({ page }) => {
   await page.goto("/?make=1");
   await page.getByLabel("From").fill("Alex");
   await fillSchedule(page);
+  await page.getByLabel("URL format").selectOption("query");
   await expect(page.getByLabel("Generated invitation URL")).not.toHaveValue("");
 
   await page.getByRole("button", { name: "Reset" }).click();
@@ -300,6 +371,7 @@ test("reset returns to an incomplete private preview", async ({ page }) => {
   await expect(page.getByLabel("From")).toHaveValue("");
   await expect(page.getByLabel("Date")).toHaveValue("");
   await expect(page.getByLabel("Time")).toHaveValue("");
+  await expect(page.getByLabel("URL format")).toHaveValue("short");
   await expect(page.getByLabel("Generated invitation URL")).toHaveValue("");
   await expect(page.getByRole("button", { name: "Copy invitation link" })).toBeDisabled();
 
@@ -307,13 +379,16 @@ test("reset returns to an incomplete private preview", async ({ page }) => {
   if (!previewValue) throw new Error("Missing internal maker preview URL");
   expect(new URL(previewValue).pathname).toBe("/");
   expect(new URL(previewValue).search).not.toBe("");
+
+  await fillSchedule(page);
+  expectOpaqueShortUrl(await page.getByLabel("Generated invitation URL").inputValue());
 });
 
 test("normalizes blank duration and time zone before copying", async ({ page, context }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"], {
-    origin: "http://127.0.0.1:4173",
-  });
   await page.goto("/?make=1");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: new URL(page.url()).origin,
+  });
   await fillSchedule(page);
 
   const browserTimeZone = await page.evaluate(
