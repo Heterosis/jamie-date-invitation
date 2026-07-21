@@ -80,7 +80,12 @@ function ownedArtifact(context: TrickEffectContext, className: string): HTMLElem
 
 type PlaneDirection = -1 | 1;
 
-const BUTTON_CLIP = "polygon(0 0, 100% 0, 100% 100%, 0 100%)";
+const RIGHT_BUTTON_CLIP = "polygon(0 0, 100% 0, 100% 100%, 0 100%)";
+const LEFT_BUTTON_CLIP = "polygon(100% 0, 0 0, 0 100%, 100% 100%)";
+
+function buttonClip(direction: PlaneDirection): string {
+  return direction === 1 ? RIGHT_BUTTON_CLIP : LEFT_BUTTON_CLIP;
+}
 
 function planeDirection(preview: VisualPreview): PlaneDirection {
   return centerOf(preview.afterNo).x < centerOf(preview.beforeNo).x ? -1 : 1;
@@ -163,14 +168,21 @@ export const TRICK_EFFECTS = {
       yesScale: MAX_YES_SCALE,
       noScale: MIN_NO_FACE_SCALE,
     });
+    const yesStartScale = String(preview.previous.yesScale / preview.target.yesScale);
+    const noStartScale = String(preview.previous.noScale / preview.target.noScale);
     context.animate(
       context.view.yesFace,
-      [{ scale: "1" }, { scale: "1.18", offset: 0.55 }, { scale: "1" }],
+      [
+        { scale: yesStartScale },
+        { scale: "1", offset: 0.55 },
+        { scale: ".96", offset: 0.78 },
+        { scale: "1" },
+      ],
       { duration: 650, easing: "ease-out", fill: "both" },
     );
     context.animate(
       context.view.noFace,
-      [{ scale: "1" }, { scale: ".76", offset: 0.55 }, { scale: "1" }],
+      [{ scale: noStartScale }, { scale: ".76", offset: 0.55 }, { scale: "1" }],
       { duration: 650, easing: "ease-out", fill: "both" },
     );
     return {
@@ -252,6 +264,7 @@ export const TRICK_EFFECTS = {
     const start = centerDelta(preview.beforeNo, preview.afterNo);
     const rotationDelta = noMotionRotationDelta(preview);
     const direction = planeDirection(preview);
+    const openClip = buttonClip(direction);
     const foldClip = firstFoldClip(direction);
     const foldedClip = planeClip(direction);
     const { creaseOne, creaseTwo } = createPlaneFold(context);
@@ -308,7 +321,7 @@ export const TRICK_EFFECTS = {
       context.view.noFace,
       [
         {
-          clipPath: BUTTON_CLIP,
+          clipPath: openClip,
           borderRadius: "999px",
           rotate: "0deg",
           scale: "1",
@@ -343,7 +356,7 @@ export const TRICK_EFFECTS = {
           offset: 0.90,
         },
         {
-          clipPath: BUTTON_CLIP,
+          clipPath: openClip,
           borderRadius: "999px",
           rotate: "0deg",
           scale: "1",

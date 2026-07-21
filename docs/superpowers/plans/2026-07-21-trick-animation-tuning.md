@@ -81,7 +81,7 @@ it("clamps configured scale bounds and freezes emitted state", () => {
 Add `MAX_YES_SCALE` and `MIN_NO_FACE_SCALE` to the existing `trick-state` import in `src/ui/trick-effects.test.ts`, then replace the Growing test with:
 
 ```ts
-it("Growing Feelings reaches the approved extremes and pulses both faces", () => {
+it("Growing Feelings animates from the prior absolute scales without exceeding safe YES", () => {
   const fixture = fakeEffectFixture();
   const result = TRICK_EFFECTS["growing-feelings"](fixture.context);
 
@@ -95,8 +95,19 @@ it("Growing Feelings reaches the approved extremes and pulses both faces", () =>
   const noAnimation = fixture.animationCalls.find(
     ({ element }) => element === fixture.elements.noFace,
   )!;
-  expect(keyframesOf(yesAnimation).map(({ scale }) => scale)).toEqual(["1", "1.18", "1"]);
-  expect(keyframesOf(noAnimation).map(({ scale }) => scale)).toEqual(["1", ".76", "1"]);
+  const yesFrames = keyframesOf(yesAnimation);
+  const noFrames = keyframesOf(noAnimation);
+  expect(Number(yesFrames[0]?.scale)).toBeCloseTo(
+    result.preview.previous.yesScale / result.preview.target.yesScale,
+  );
+  expect(yesFrames.every(({ scale }) => Number(scale) <= 1)).toBe(true);
+  expect(yesFrames).toContainEqual(expect.objectContaining({ offset: 0.55, scale: "1" }));
+  expect(yesFrames.at(-1)?.scale).toBe("1");
+  expect(Number(noFrames[0]?.scale)).toBeCloseTo(
+    result.preview.previous.noScale / result.preview.target.noScale,
+  );
+  expect(noFrames).toContainEqual(expect.objectContaining({ offset: 0.55, scale: ".76" }));
+  expect(noFrames.at(-1)?.scale).toBe("1");
   expect(yesAnimation.options.duration).toBe(650);
   expect(noAnimation.options.duration).toBe(650);
   expect(result.fallbackMs).toBe(850);
@@ -172,14 +183,21 @@ Replace the Growing effect with:
     yesScale: MAX_YES_SCALE,
     noScale: MIN_NO_FACE_SCALE,
   });
+  const yesStartScale = String(preview.previous.yesScale / preview.target.yesScale);
+  const noStartScale = String(preview.previous.noScale / preview.target.noScale);
   context.animate(
     context.view.yesFace,
-    [{ scale: "1" }, { scale: "1.18", offset: 0.55 }, { scale: "1" }],
+    [
+      { scale: yesStartScale },
+      { scale: "1", offset: 0.55 },
+      { scale: ".96", offset: 0.78 },
+      { scale: "1" },
+    ],
     { duration: 650, easing: "ease-out", fill: "both" },
   );
   context.animate(
     context.view.noFace,
-    [{ scale: "1" }, { scale: ".76", offset: 0.55 }, { scale: "1" }],
+    [{ scale: noStartScale }, { scale: ".76", offset: 0.55 }, { scale: "1" }],
     { duration: 650, easing: "ease-out", fill: "both" },
   );
   return {
@@ -844,7 +862,12 @@ Add these helpers above `TRICK_EFFECTS` in `src/ui/trick-effects.ts`:
 ```ts
 type PlaneDirection = -1 | 1;
 
-const BUTTON_CLIP = "polygon(0 0, 100% 0, 100% 100%, 0 100%)";
+const RIGHT_BUTTON_CLIP = "polygon(0 0, 100% 0, 100% 100%, 0 100%)";
+const LEFT_BUTTON_CLIP = "polygon(100% 0, 0 0, 0 100%, 100% 100%)";
+
+function buttonClip(direction: PlaneDirection): string {
+  return direction === 1 ? RIGHT_BUTTON_CLIP : LEFT_BUTTON_CLIP;
+}
 
 function planeDirection(preview: VisualPreview): PlaneDirection {
   return centerOf(preview.afterNo).x < centerOf(preview.beforeNo).x ? -1 : 1;
@@ -888,6 +911,7 @@ Replace the complete `paper-plane` effect with:
   const start = centerDelta(preview.beforeNo, preview.afterNo);
   const rotationDelta = noMotionRotationDelta(preview);
   const direction = planeDirection(preview);
+  const openClip = buttonClip(direction);
   const foldClip = firstFoldClip(direction);
   const foldedClip = planeClip(direction);
   const { creaseOne, creaseTwo } = createPlaneFold(context);
@@ -937,12 +961,12 @@ Replace the complete `paper-plane` effect with:
   context.animate(
     context.view.noFace,
     [
-      { clipPath: BUTTON_CLIP, borderRadius: "999px", rotate: "0deg", scale: "1", offset: 0 },
+      { clipPath: openClip, borderRadius: "999px", rotate: "0deg", scale: "1", offset: 0 },
       { clipPath: foldClip, borderRadius: "5px", rotate: `${direction * -4}deg`, scale: ".94", offset: 0.16 },
       { clipPath: foldedClip, borderRadius: "0", rotate: `${direction * -12}deg`, scale: ".78", offset: 0.30 },
       { clipPath: foldedClip, borderRadius: "0", rotate: `${direction * 3}deg`, scale: ".78", offset: 0.80 },
       { clipPath: foldClip, borderRadius: "5px", rotate: "0deg", scale: ".94", offset: 0.90 },
-      { clipPath: BUTTON_CLIP, borderRadius: "999px", rotate: "0deg", scale: "1", offset: 1 },
+      { clipPath: openClip, borderRadius: "999px", rotate: "0deg", scale: "1", offset: 1 },
     ],
     options,
   );

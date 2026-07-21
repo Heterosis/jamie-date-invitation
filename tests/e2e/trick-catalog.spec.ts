@@ -230,6 +230,151 @@ test("Growing enlarges YES and shrinks only NO's visual face", async ({ page }) 
   expect(after.hitHeight).toBeGreaterThanOrEqual(44);
 });
 
+test("Growing peak stays inside validated geometry on a narrow viewport", async ({ page }) => {
+  await forceTrickOrder(page, ["growing-feelings"]);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?to=Jamie");
+  await settleLetter(page);
+
+  await page.locator("[data-no]").click();
+  const sampled = await page.locator("[data-letter]").evaluate((letter) => {
+    type Box = {
+      left: number;
+      top: number;
+      right: number;
+      bottom: number;
+      width: number;
+      height: number;
+    };
+    const box = (element: Element): Box => {
+      const value = element.getBoundingClientRect();
+      return {
+        left: value.left,
+        top: value.top,
+        right: value.right,
+        bottom: value.bottom,
+        width: value.width,
+        height: value.height,
+      };
+    };
+    const union = (values: readonly Box[]): Box => {
+      const left = Math.min(...values.map((value) => value.left));
+      const top = Math.min(...values.map((value) => value.top));
+      const right = Math.max(...values.map((value) => value.right));
+      const bottom = Math.max(...values.map((value) => value.bottom));
+      return { left, top, right, bottom, width: right - left, height: bottom - top };
+    };
+    const expand = (value: Box, gap: number): Box => ({
+      left: value.left - gap,
+      top: value.top - gap,
+      right: value.right + gap,
+      bottom: value.bottom + gap,
+      width: value.width + gap * 2,
+      height: value.height + gap * 2,
+    });
+    const overlaps = (first: Box, second: Box): boolean => (
+      first.left < second.right
+      && first.right > second.left
+      && first.top < second.bottom
+      && first.bottom > second.top
+    );
+    const required = (selector: string): Element => {
+      const element = document.querySelector(selector);
+      if (!element) throw new Error(`Missing Growing geometry element: ${selector}`);
+      return element;
+    };
+
+    const yesFace = required("[data-yes-face]");
+    const animation = yesFace.getAnimations().find((candidate) => (
+      !(typeof CSSTransition !== "undefined" && candidate instanceof CSSTransition)
+      && candidate.effect instanceof KeyframeEffect
+      && candidate.effect.target === yesFace
+    ));
+    if (!animation || !(animation.effect instanceof KeyframeEffect)) {
+      throw new Error("Missing active Growing YES animation");
+    }
+    animation.pause();
+    const timing = animation.effect.getTiming();
+    if (typeof timing.duration !== "number") throw new Error("Growing duration is not numeric");
+    const delay = Number(timing.delay);
+    const measure = () => {
+      const letterBox = box(letter);
+      const style = getComputedStyle(letter);
+      const border = {
+        left: Number.parseFloat(style.borderLeftWidth) || 0,
+        right: Number.parseFloat(style.borderRightWidth) || 0,
+        top: Number.parseFloat(style.borderTopWidth) || 0,
+        bottom: Number.parseFloat(style.borderBottomWidth) || 0,
+      };
+      const safeLetter = {
+        left: letterBox.left + border.left + 8,
+        right: letterBox.right - border.right - 8,
+        top: letterBox.top + border.top + 10,
+        bottom: letterBox.bottom - border.bottom - 8,
+      };
+      const yesRect = union([
+        box(required("[data-yes-seat]")),
+        box(required("[data-yes]")),
+        box(yesFace),
+      ]);
+      const protectedRects = Array.from(letter.querySelectorAll(
+        ".eyebrow, [data-question], [data-note], .date-ticket, [data-signature], .tape, .wax-seal",
+      )).map((element) => ({
+        selector: element.className || element.tagName,
+        box: expand(box(element), 8),
+      }));
+      const violations = [
+        ...(yesRect.left < safeLetter.left ? ["letter-left"] : []),
+        ...(yesRect.right > safeLetter.right ? ["letter-right"] : []),
+        ...(yesRect.top < safeLetter.top ? ["letter-top"] : []),
+        ...(yesRect.bottom > safeLetter.bottom ? ["letter-bottom"] : []),
+        ...(yesRect.left < -1 ? ["viewport-left"] : []),
+        ...(yesRect.right > innerWidth + 1 ? ["viewport-right"] : []),
+        ...protectedRects
+          .filter((entry) => overlaps(yesRect, entry.box))
+          .map((entry) => `protected:${entry.selector}`),
+      ];
+      return {
+        yesRect,
+        safeLetter,
+        violations,
+        persistentScale: getComputedStyle(yesFace).getPropertyValue("--yes-scale"),
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    };
+
+    let peak = { area: -1, fraction: 0 };
+    for (let step = 0; step <= 260; step += 1) {
+      const fraction = step / 260;
+      animation.currentTime = delay + timing.duration * fraction;
+      const faceBox = yesFace.getBoundingClientRect();
+      const area = faceBox.width * faceBox.height;
+      if (area > peak.area) peak = { area, fraction };
+    }
+    animation.currentTime = delay + timing.duration * peak.fraction;
+    const peakGeometry = measure();
+    animation.currentTime = delay + timing.duration;
+    const settledGeometry = measure();
+    return {
+      sampledPeak: peak,
+      peakGeometry,
+      settledGeometry,
+    };
+  });
+
+  expect(
+    sampled.peakGeometry.violations,
+    `Growing peak escaped validated geometry: ${JSON.stringify(sampled)}`,
+  ).toEqual([]);
+  expect(sampled.peakGeometry.overflow).toBeLessThanOrEqual(1);
+  expect(sampled.settledGeometry.violations, JSON.stringify(sampled)).toEqual([]);
+  expect(sampled.settledGeometry.overflow).toBeLessThanOrEqual(1);
+
+  await resumeTrickAnimations(page);
+  await waitForTrickIdle(page);
+  await expect(page.locator("[data-trick-artifact]")).toHaveCount(0);
+});
+
 test("Seat Swap reverses visual order without replacing either semantic button", async ({ page }) => {
   await forceTrickOrder(page, ["seat-swap"]);
   await page.goto("/?to=Jamie");

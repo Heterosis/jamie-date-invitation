@@ -47,7 +47,9 @@ The existing `runaway` pose selection already sorts valid slots by distance and 
 
 - Raise the persistent state limits to YES `1.75` and NO face `0.50`.
 - Request YES `1.75` and NO face `0.50` directly so the one non-repeating Growing draw reaches the approved visual intensity. State clamping still enforces those limits.
-- Increase the temporary pulse to approximately YES `1.18` and NO `0.76` before returning each face animation to identity.
+- Stage the geometry-validated persistent scales, then begin each face animation with a relative multiplier of `previous / target` so the rendered face starts at its true prior absolute size instead of jumping.
+- Grow YES to multiplier `1` by offset `0.55`, settle briefly inward near `0.96`, and finish at identity. No YES animation multiplier may exceed `1`, because it composes multiplicatively with the persistent `--yes-scale` transform.
+- Shrink NO to multiplier `0.76` by offset `0.55`, then return to identity; only its visual face changes size.
 - Duration: `650ms`; fallback: `850ms`.
 - Geometry may clamp YES below `1.75` only when the requested scale would overlap protected content or leave the safe region.
 - Only the NO visual face shrinks; the button's semantic hit area remains unchanged.
@@ -74,6 +76,7 @@ Implementation details:
 
 - Duration: approximately `1500ms`; fallback: `1750ms`.
 - Use four-point polygons for every clip-path frame so Chromium can interpolate the fold continuously.
+- Use direction-aware normal-button polygons whose vertex order matches the first fold. In particular, the left-facing rectangle must be ordered right-to-left so interpolation cannot collapse to a zero-width vertical line.
 - Use a runner-owned, `aria-hidden`, pointer-event-free `.trick-plane-fold` decoration with crease layers inside the existing NO face. All crease animations go through `context.animate` so the runner waits, cancels, and cleans them with the rest of the trick.
 - Determine heading from the actual safe-pose delta: a landing to the right uses a right-pointing plane polygon; a landing to the left uses its horizontally mirrored polygon. Keep every horizontal flight keyframe between the origin and landing, in monotonic fractions of the remaining delta, so the plane never crosses the target and reverses while its nose still points forward. Put the playful flourish in height, rotation, and scale instead. A near-zero delta defaults right, though the plane intent normally selects a meaningful horizontal displacement.
 - Delay the visible flight until folding is complete, keep the plane silhouette through the flight, then unfold only after landing.

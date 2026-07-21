@@ -146,6 +146,7 @@ function fakeEffectFixture(options: {
   readonly rightYes?: DOMRectReadOnly;
   readonly leftNo?: DOMRectReadOnly;
   readonly rightNo?: DOMRectReadOnly;
+  readonly clampedYesScale?: number;
 } = {}): EffectFixture {
   const document = new FakeDocument();
   const state = options.state ?? Object.freeze({
@@ -194,7 +195,10 @@ function fakeEffectFixture(options: {
     ? SAFE_POSE
     : options.pose);
   const preview = vi.fn((patch: TrickVisualPatch): VisualPreview => {
-    const target = applyTrickVisualPatch(state, patch);
+    const requestedTarget = applyTrickVisualPatch(state, patch);
+    const target = options.clampedYesScale === undefined
+      ? requestedTarget
+      : applyTrickVisualPatch(requestedTarget, { yesScale: options.clampedYesScale });
     let afterYes = target.swapped ? rightYes : leftYes;
     let afterNo = target.swapped ? leftNo : rightNo;
     if (patch.noPose) {
@@ -274,6 +278,29 @@ function polygonPointCount(value: unknown): number {
   const match = String(value).match(/^polygon\((.*)\)$/);
   if (!match) throw new Error(`Expected polygon clip path, received: ${String(value)}`);
   return match[1]!.split(",").length;
+}
+
+function polygonPoints(value: unknown): readonly Point[] {
+  const match = String(value).match(/^polygon\((.*)\)$/);
+  if (!match) throw new Error(`Expected polygon clip path, received: ${String(value)}`);
+  return match[1]!.split(",").map((entry) => {
+    const coordinates = entry.trim().split(/\s+/);
+    if (coordinates.length !== 2) throw new Error(`Expected polygon point: ${entry}`);
+    return {
+      x: Number.parseFloat(coordinates[0]!),
+      y: Number.parseFloat(coordinates[1]!),
+    };
+  });
+}
+
+function interpolatedPolygonWidth(from: unknown, to: unknown, progress: number): number {
+  const starts = polygonPoints(from);
+  const ends = polygonPoints(to);
+  expect(ends).toHaveLength(starts.length);
+  const xValues = starts.map((start, index) => (
+    start.x + (ends[index]!.x - start.x) * progress
+  ));
+  return Math.max(...xValues) - Math.min(...xValues);
 }
 
 interface ParsedMotionTransform {
@@ -380,7 +407,7 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
     expect(result.preview.target.noPose).toEqual(SAFE_POSE);
   });
 
-  it("Growing Feelings caps both scale patches and animates both faces", () => {
+  it("Growing Feelings animates from the prior absolute scales without exceeding safe YES", () => {
     const fixture = fakeEffectFixture();
     const result = TRICK_EFFECTS["growing-feelings"](fixture.context);
 
@@ -392,19 +419,47 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
       fixture.elements.yesFace,
       fixture.elements.noFace,
     ]);
-    expect(keyframesOf(fixture.animationCalls[0]!).map(({ scale }) => scale)).toEqual([
-      "1",
-      "1.18",
-      "1",
-    ]);
-    expect(keyframesOf(fixture.animationCalls[1]!).map(({ scale }) => scale)).toEqual([
-      "1",
-      ".76",
-      "1",
-    ]);
+    const yesFrames = keyframesOf(fixture.animationCalls[0]!);
+    const noFrames = keyframesOf(fixture.animationCalls[1]!);
+    expect(Number(yesFrames[0]?.scale)).toBeCloseTo(
+      result.preview.previous.yesScale / result.preview.target.yesScale,
+      8,
+    );
+    expect(yesFrames.every(({ scale }) => Number(scale) <= 1)).toBe(true);
+    expect(yesFrames).toContainEqual(expect.objectContaining({ offset: 0.55, scale: "1" }));
+    expect(yesFrames.at(-1)?.scale).toBe("1");
+    expect(Number(noFrames[0]?.scale)).toBeCloseTo(
+      result.preview.previous.noScale / result.preview.target.noScale,
+      8,
+    );
+    expect(noFrames).toContainEqual(expect.objectContaining({ offset: 0.55, scale: ".76" }));
+    expect(noFrames.at(-1)?.scale).toBe("1");
     expect(fixture.animationCalls.map(({ options }) => options.duration)).toEqual([650, 650]);
     expect(result.fallbackMs).toBe(850);
     expect(result.persistence).toBe("commit-target");
+  });
+
+  it("Growing Feelings rebases its first frame on the geometry-clamped YES target", () => {
+    const fixture = fakeEffectFixture({ clampedYesScale: 1.37 });
+    const result = TRICK_EFFECTS["growing-feelings"](fixture.context);
+    const yesAnimation = fixture.animationCalls.find(
+      ({ element }) => element === fixture.elements.yesFace,
+    )!;
+    const firstMultiplier = Number(keyframesOf(yesAnimation)[0]?.scale);
+
+    expect(result.preview.target.yesScale).toBe(1.37);
+    expect(firstMultiplier).toBeCloseTo(
+      result.preview.previous.yesScale / result.preview.target.yesScale,
+      8,
+    );
+    expect(firstMultiplier * result.preview.target.yesScale).toBeCloseTo(
+      result.preview.previous.yesScale,
+      8,
+    );
+    expect(firstMultiplier).not.toBeCloseTo(
+      result.preview.previous.yesScale / MAX_YES_SCALE,
+      8,
+    );
   });
 
   it("Seat Swap previews inverse order and FLIPs both motion wrappers", () => {
@@ -557,6 +612,24 @@ describe("TRICK_EFFECTS lifecycle registry", () => {
         .toBeGreaterThanOrEqual(-1e-6);
     }
     expectSettledMotion(transformAt(motionFrames, -1));
+  });
+
+  it("Paper Plane keeps meaningful width while the left-facing face folds and unfolds", () => {
+    const fixture = fakeEffectFixture({ pose: LEFT_SAFE_POSE });
+    TRICK_EFFECTS["paper-plane"](fixture.context);
+    const face = fixture.animationCalls.find(
+      ({ element }) => element === fixture.elements.noFace,
+    )!;
+    const frames = keyframesOf(face);
+    const foldWidths = [0.25, 0.5, 0.75].map((progress) => (
+      interpolatedPolygonWidth(frames[0]?.clipPath, frames[1]?.clipPath, progress)
+    ));
+    const unfoldWidths = [0.25, 0.5, 0.75].map((progress) => (
+      interpolatedPolygonWidth(frames[4]?.clipPath, frames[5]?.clipPath, progress)
+    ));
+
+    expect(Math.min(...foldWidths)).toBeGreaterThanOrEqual(50);
+    expect(Math.min(...unfoldWidths)).toBeGreaterThanOrEqual(50);
   });
 
   it("Paper Plane uses a vertical fold-and-hop when no safe pose exists", () => {
