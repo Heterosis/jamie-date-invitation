@@ -48,6 +48,44 @@ test("builds a ready-to-send URL and matching live preview", async ({ page }) =>
   await expect(preview.locator("[data-signature]")).toHaveText("from Alex");
 });
 
+test("refreshes the live preview after successive compact fragment updates", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.goto("/?make=1");
+  await page.getByLabel("From").fill("Alex");
+  await fillSchedule(page);
+
+  const generated = page.getByLabel("Generated invitation URL");
+  const preview = page.frameLocator('iframe[title="Invitation preview"]');
+  let previousHash = new URL(await generated.inputValue()).hash;
+
+  await page.getByLabel("To", { exact: true }).fill("Morgan");
+  let currentHash = new URL(await generated.inputValue()).hash;
+  expect(currentHash).not.toBe(previousHash);
+  await expect(preview.getByRole("heading", {
+    name: "Morgan, will you go on a date with me?",
+  })).toBeVisible();
+  previousHash = currentHash;
+
+  await page.getByLabel("From").fill("Riley");
+  currentHash = new URL(await generated.inputValue()).hash;
+  expect(currentHash).not.toBe(previousHash);
+  await expect(preview.locator("[data-signature]")).toHaveText("from Riley");
+  previousHash = currentHash;
+
+  await page.getByLabel("Place").fill("Botanic Gardens");
+  currentHash = new URL(await generated.inputValue()).hash;
+  expect(currentHash).not.toBe(previousHash);
+  await expect(preview.locator("[data-place]")).toHaveText("Botanic Gardens");
+  previousHash = currentHash;
+
+  await page.getByLabel("Note").fill("Bring your favorite story.");
+  currentHash = new URL(await generated.inputValue()).hash;
+  expect(currentHash).not.toBe(previousHash);
+  await expect(preview.locator("[data-note]")).toHaveText("Bring your favorite story.");
+  expect(pageErrors).toEqual([]);
+});
+
 test("keeps incomplete values only in the internal legacy preview", async ({ page }) => {
   await page.goto("/?make=1");
 

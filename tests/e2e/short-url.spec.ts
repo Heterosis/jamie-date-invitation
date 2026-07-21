@@ -6,7 +6,7 @@ import { buildShortInvitationUrl } from "../../src/short-url/short-url";
 const INVALID_HEADING = "This invitation link couldn't be opened.";
 const INVALID_GUIDANCE = "Please ask the sender for a new link.";
 
-function validShortUrl(): URL {
+function validShortUrl(overrides: Readonly<Record<string, string>> = {}): URL {
   const config = parseInvitationConfig(new URLSearchParams({
     to: "Morgan",
     from: "Riley",
@@ -19,6 +19,7 @@ function validShortUrl(): URL {
     note: "Bring your favorite story.",
     telegram: "riley_dates",
     notifyName: "Riley",
+    ...overrides,
   }).toString());
   if (!isShareableInvitationConfig(config)) {
     throw new Error("Test fixture must be shareable");
@@ -81,6 +82,75 @@ test("opens a compact invitation with its full schedule and response actions", a
   await expect(page.locator("[data-date]")).toHaveText("Saturday, August 8, 2026");
   await expect(page.locator("[data-time]")).toHaveText("7:30 PM");
   await expect(page.locator("[data-place]")).toHaveText("Botanic Gardens");
+  await expect(page.locator("[data-signature]")).toHaveText("from Riley");
+  await expect(page.getByRole("button", { name: "YES, I'D LOVE TO" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "NO, SORRY" })).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
+
+test("remounts compact invitations across valid and invalid fragment-only navigation", async ({
+  page,
+}) => {
+  const pageErrors = capturePageErrors(page);
+  const first = validShortUrl();
+  const second = validShortUrl({
+    to: "Avery",
+    from: "Quinn",
+    place: "Night Market",
+    note: "Meet beside the lanterns.",
+    telegram: "quinn_dates",
+    notifyName: "Quinn",
+  });
+
+  await page.goto(shortRoute(first));
+  await expect(page.getByRole("heading", {
+    level: 1,
+    name: "Morgan, will you go on a date with me?",
+  })).toBeVisible();
+
+  await page.evaluate((hash) => {
+    location.hash = hash;
+  }, second.hash);
+  await expect.poll(() => new URL(page.url()).hash).toBe(second.hash);
+  await expect(page.getByRole("heading", {
+    level: 1,
+    name: "Avery, will you go on a date with me?",
+  })).toBeVisible();
+  await expect(page.locator("[data-signature]")).toHaveText("from Quinn");
+  await expect(page.locator("[data-place]")).toHaveText("Night Market");
+  await expect(page.locator("[data-note]")).toHaveText("Meet beside the lanterns.");
+
+  const currentInvitationUrl = page.url();
+  await page.getByRole("button", { name: "YES, I'D LOVE TO" }).dispatchEvent("click");
+  const telegram = page.getByRole("link", { name: "TELL QUINN ON TELEGRAM" });
+  await expect(telegram).toBeVisible();
+  const telegramHref = await telegram.getAttribute("href");
+  if (!telegramHref) throw new Error("Missing remounted Telegram URL");
+  const telegramUrl = new URL(telegramHref);
+  expect(telegramUrl.origin + telegramUrl.pathname).toBe("https://t.me/quinn_dates");
+  const draft = telegramUrl.searchParams.get("text");
+  if (draft === null) throw new Error("Missing remounted Telegram draft");
+  expect(draft.split(currentInvitationUrl)).toHaveLength(2);
+
+  await page.evaluate(() => {
+    location.hash = "#bad.payload";
+  });
+  await expect.poll(() => new URL(page.url()).hash).toBe("#bad.payload");
+  await expect(page).toHaveTitle("Invitation link unavailable");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(INVALID_HEADING);
+  await expect(page.getByText(INVALID_GUIDANCE, { exact: true })).toBeVisible();
+  await expect(page.getByRole("button")).toHaveCount(0);
+  await expect(page.locator("a")).toHaveCount(0);
+
+  await page.evaluate((hash) => {
+    location.hash = hash;
+  }, first.hash);
+  await expect.poll(() => new URL(page.url()).hash).toBe(first.hash);
+  await expect(page).toHaveTitle("A tiny invitation");
+  await expect(page.getByRole("heading", {
+    level: 1,
+    name: "Morgan, will you go on a date with me?",
+  })).toBeVisible();
   await expect(page.locator("[data-signature]")).toHaveText("from Riley");
   await expect(page.getByRole("button", { name: "YES, I'D LOVE TO" })).toBeVisible();
   await expect(page.getByRole("button", { name: "NO, SORRY" })).toBeVisible();

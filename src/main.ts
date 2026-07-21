@@ -24,12 +24,32 @@ const app = document.querySelector<HTMLElement>("#app");
 if (!app) throw new Error("Missing #app mount point");
 
 if (isShortInvitationPath(location.pathname)) {
-  try {
-    const config = decodeShortInvitationHash(location.hash);
-    wireInvitation(mountInvitation(app, config), config);
-  } catch {
-    mountInvalidInvitation(app);
-  }
+  let invitationController: ReturnType<typeof wireInvitation> | undefined;
+  const disposeInvitation = (): void => {
+    const controller = invitationController;
+    invitationController = undefined;
+    try {
+      controller?.dispose();
+    } catch {
+      // Replacing the mount point still leaves the next invitation fail closed.
+    }
+  };
+
+  const renderShortInvitation = (): void => {
+    disposeInvitation();
+
+    try {
+      const config = decodeShortInvitationHash(location.hash);
+      invitationController = wireInvitation(mountInvitation(app, config), config);
+      document.title = "A tiny invitation";
+    } catch {
+      disposeInvitation();
+      mountInvalidInvitation(app);
+    }
+  };
+
+  renderShortInvitation();
+  window.addEventListener("hashchange", renderShortInvitation);
 } else {
   const config = parseInvitationConfig(location.search);
   if (config.make) {
