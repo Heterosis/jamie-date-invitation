@@ -4,6 +4,7 @@ test("serves a complete invitation from the configured base URL", async ({ page 
   test.skip(!process.env.PLAYWRIGHT_BASE_URL, "Runs only against the deployed Pages URL");
   const baseUrl = new URL(process.env.PLAYWRIGHT_BASE_URL!);
   const expectedPagesPathPrefix = baseUrl.pathname.replace(/\/?$/, "/");
+  const expectedFaviconUrl = new URL(`${expectedPagesPathPrefix}favicon.svg`, baseUrl.origin).href;
   const expectedAssetPathPrefix = `${baseUrl.pathname.replace(/\/?$/, "/")}assets/`;
   const assetResponses: Response[] = [];
   const requestFailures: string[] = [];
@@ -47,12 +48,12 @@ test("serves a complete invitation from the configured base URL", async ({ page 
   await expect(favicon, "Favicon link must use rel=icon").toHaveAttribute("rel", "icon");
   await expect(favicon, "Favicon link must declare SVG content").toHaveAttribute("type", "image/svg+xml");
   const faviconUrl = await favicon.evaluate((element) => (element as HTMLLinkElement).href);
+  expect(
+    faviconUrl,
+    `Favicon must resolve exactly to the configured Pages SVG URL ${expectedFaviconUrl}`,
+  ).toBe(expectedFaviconUrl);
   const faviconResponse = await page.request.get(faviconUrl);
 
-  expect(
-    new URL(faviconUrl).pathname.startsWith(expectedPagesPathPrefix),
-    `${faviconUrl} escaped the configured Pages base ${expectedPagesPathPrefix}`,
-  ).toBe(true);
   expect(faviconResponse.ok(), `${faviconUrl} returned HTTP ${faviconResponse.status()}`).toBe(true);
   expect(
     faviconResponse.headers()["content-type"] ?? "",
