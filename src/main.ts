@@ -8,7 +8,12 @@ import "./styles/results.css";
 import "./styles/maker.css";
 
 import { parseInvitationConfig } from "./domain/invitation-config";
+import {
+  decodeShortInvitationHash,
+  isShortInvitationPath,
+} from "./short-url/short-url";
 import { wireInvitation } from "./ui/invitation-controller";
+import { mountInvalidInvitation } from "./ui/invalid-invitation-view";
 import { mountInvitation } from "./ui/invitation-view";
 import { mountMaker } from "./ui/maker-view";
 import { installMotionPreference } from "./ui/motion";
@@ -18,9 +23,18 @@ installMotionPreference();
 const app = document.querySelector<HTMLElement>("#app");
 if (!app) throw new Error("Missing #app mount point");
 
-const config = parseInvitationConfig(location.search);
-if (config.make) {
-  mountMaker(app, config);
+if (isShortInvitationPath(location.pathname)) {
+  try {
+    const config = decodeShortInvitationHash(location.hash);
+    wireInvitation(mountInvitation(app, config), config);
+  } catch {
+    mountInvalidInvitation(app);
+  }
 } else {
-  wireInvitation(mountInvitation(app, config), config);
+  const config = parseInvitationConfig(location.search);
+  if (config.make) {
+    mountMaker(app, config);
+  } else {
+    wireInvitation(mountInvitation(app, config), config);
+  }
 }
