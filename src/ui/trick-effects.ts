@@ -252,6 +252,26 @@ export const TRICK_EFFECTS = {
 
   "cupid-magnet": (context) => {
     const { preview, posed } = choosePosePreview(context, "magnet");
+    const magnet = ownedArtifact(
+      context,
+      `trick-cupid-magnet trick-cupid-magnet--${
+        centerOf(preview.beforeNo).x < centerOf(preview.beforeYes).x ? "left" : "right"
+      }`,
+    );
+    magnet.textContent = "🧲";
+    context.view.yesSeat.append(magnet);
+    context.animate(
+      magnet,
+      [
+        { offset: 0, opacity: 0, transform: "translateY(4px) scale(.65) rotate(-16deg)" },
+        { offset: .18, opacity: 1, transform: "translateY(-4px) scale(1.12) rotate(7deg)" },
+        { offset: .42, opacity: 1, transform: "translateY(2px) scale(.96) rotate(-6deg)" },
+        { offset: .66, opacity: 1, transform: "translateY(-1px) scale(1.04) rotate(4deg)" },
+        { offset: .82, opacity: 1, transform: "translateY(0) scale(1) rotate(0deg)" },
+        { offset: 1, opacity: 0, transform: "translateY(0) scale(.9) rotate(-4deg)" },
+      ],
+      { duration: 880, easing: "ease-in-out", fill: "both" },
+    );
     const rotationDelta = noMotionRotationDelta(preview);
     let keyframes: Keyframe[];
     if (posed) {

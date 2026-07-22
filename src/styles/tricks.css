@@ -96,6 +96,17 @@ html[data-motion="reduced"] .desk :is(
 
 .desk [data-trick-artifact] { pointer-events: none; }
 
+.desk [data-yes-seat] .trick-cupid-magnet {
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.desk [data-yes-seat] .trick-cupid-magnet--left { right: calc(100% + 12px); }
+.desk [data-yes-seat] .trick-cupid-magnet--right { left: calc(100% + 12px); }
+
 .trick-plane-fold {
   position: absolute;
   inset: 0;
