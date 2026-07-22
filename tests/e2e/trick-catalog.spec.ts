@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import type { TrickId } from "../../src/domain/trick-deck";
 import {
   activateNoAndWait,
+  assertNoTrickResidue,
   buttonIdentityToken,
   forceTrickOrder,
   resumeTrickAnimations,
@@ -441,7 +442,6 @@ for (const swapped of [false, true]) {
     await forceTrickOrder(page, swapped
       ? ["seat-swap", "cupid-magnet"]
       : ["cupid-magnet"]);
-    await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/?to=Jamie");
     await settleLetter(page);
     if (swapped) await activateNoAndWait(page);
@@ -464,8 +464,11 @@ for (const swapped of [false, true]) {
     const during = await page.evaluate(() => {
       const letter = document.querySelector<HTMLElement>("[data-letter]");
       const yes = document.querySelector<HTMLButtonElement>("[data-yes]");
+      const yesSeat = document.querySelector<HTMLElement>("[data-yes-seat]");
       const magnet = document.querySelector<HTMLElement>(".trick-cupid-magnet");
-      if (!letter || !yes || !magnet) throw new Error("Missing Cupid Magnet lifecycle elements");
+      if (!letter || !yes || !yesSeat || !magnet) {
+        throw new Error("Missing Cupid Magnet lifecycle elements");
+      }
       const center = (element: Element) => {
         const rect = element.getBoundingClientRect();
         return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
@@ -489,6 +492,10 @@ for (const swapped of [false, true]) {
         .matrixTransform(inverseLinearTransform);
       const yesRect = yes.getBoundingClientRect();
       const magnetRect = magnet.getBoundingClientRect();
+      const side = magnet.classList.contains("trick-cupid-magnet--left") ? "left" : "right";
+      const localGap = side === "left"
+        ? -(magnet.offsetLeft + magnet.offsetWidth)
+        : magnet.offsetLeft - yesSeat.clientWidth;
       return {
         localVerticalDelta: localDelta.y,
         yes: { center: yesCenter, left: yesRect.left, right: yesRect.right },
@@ -497,6 +504,9 @@ for (const swapped of [false, true]) {
           left: magnetRect.left,
           right: magnetRect.right,
           pointerEvents: getComputedStyle(magnet).pointerEvents,
+          fontSize: getComputedStyle(magnet).fontSize,
+          offsetParentIsYesSeat: magnet.offsetParent === yesSeat,
+          localGap,
         },
       };
     });
@@ -507,6 +517,9 @@ for (const swapped of [false, true]) {
       : during.magnet.left - during.yes.right;
     expect(Math.abs(actualViewportGap - 12)).toBeLessThanOrEqual(1);
     expect(during.magnet.pointerEvents).toBe("none");
+    expect(during.magnet.fontSize).toBe("24px");
+    expect(during.magnet.offsetParentIsYesSeat).toBe(true);
+    expect(Math.abs(during.magnet.localGap - 12)).toBeLessThanOrEqual(1);
     await expect(page.locator("[data-yes]")).toHaveAccessibleName("YES, I'D LOVE TO");
 
     await resumeTrickAnimations(page);
@@ -535,6 +548,29 @@ for (const swapped of [false, true]) {
     await expect(page.locator("[data-trick-artifact]")).toHaveCount(0);
   });
 }
+
+test("Cupid Magnet cancellation clears its active runner state before the YES result", async ({ page }) => {
+  await forceTrickOrder(page, ["cupid-magnet"]);
+  await page.goto("/?to=Jamie&date=2026-08-08&time=19%3A30");
+  await settleLetter(page);
+  const stage = page.locator("[data-stage]");
+  const magnet = page.locator(".trick-cupid-magnet");
+
+  await page.locator("[data-no]").click();
+  await seekTrickAnimations(page, 0.55);
+  await expect(magnet).toBeVisible();
+  await expect(stage).toHaveAttribute("data-trick-busy", "true");
+  await expect(stage).toHaveAttribute("aria-busy", "true");
+
+  await page.locator("[data-yes]").click();
+
+  await expect(page.locator("[data-success]")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "It's a date!" })).toHaveCount(1);
+  await expect(stage.locator("[data-trick-artifact]")).toHaveCount(0);
+  await expect(stage).toHaveAttribute("data-trick-busy", "false");
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  await assertNoTrickResidue(page);
+});
 
 test.describe("long-lived decorative tricks", () => {
   const cases = [
