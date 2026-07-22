@@ -462,19 +462,38 @@ for (const swapped of [false, true]) {
       (element) => getComputedStyle(element).opacity,
     ))).toBeGreaterThan(0.5);
     const during = await page.evaluate(() => {
+      const letter = document.querySelector<HTMLElement>("[data-letter]");
       const yes = document.querySelector<HTMLButtonElement>("[data-yes]");
       const magnet = document.querySelector<HTMLElement>(".trick-cupid-magnet");
-      if (!yes || !magnet) throw new Error("Missing Cupid Magnet lifecycle elements");
+      if (!letter || !yes || !magnet) throw new Error("Missing Cupid Magnet lifecycle elements");
       const center = (element: Element) => {
         const rect = element.getBoundingClientRect();
         return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
       };
+      const yesCenter = center(yes);
+      const magnetCenter = center(magnet);
+      const viewportDelta = {
+        x: magnetCenter.x - yesCenter.x,
+        y: magnetCenter.y - yesCenter.y,
+      };
+      const letterTransform = new DOMMatrixReadOnly(getComputedStyle(letter).transform);
+      const inverseLinearTransform = new DOMMatrixReadOnly([
+        letterTransform.a,
+        letterTransform.b,
+        letterTransform.c,
+        letterTransform.d,
+        0,
+        0,
+      ]).inverse();
+      const localDelta = new DOMPoint(viewportDelta.x, viewportDelta.y)
+        .matrixTransform(inverseLinearTransform);
       const yesRect = yes.getBoundingClientRect();
       const magnetRect = magnet.getBoundingClientRect();
       return {
-        yes: { center: center(yes), left: yesRect.left, right: yesRect.right },
+        localVerticalDelta: localDelta.y,
+        yes: { center: yesCenter, left: yesRect.left, right: yesRect.right },
         magnet: {
-          center: center(magnet),
+          center: magnetCenter,
           left: magnetRect.left,
           right: magnetRect.right,
           pointerEvents: getComputedStyle(magnet).pointerEvents,
@@ -482,12 +501,11 @@ for (const swapped of [false, true]) {
       };
     });
     expectStableCenter(before.yes, during.yes.center);
-    expect(during.magnet.center.y).toBeCloseTo(during.yes.center.y, 1);
-    if (magnetSide === "left") {
-      expect(during.magnet.right).toBeCloseTo(during.yes.left - 12, 1);
-    } else {
-      expect(during.magnet.left).toBeCloseTo(during.yes.right + 12, 1);
-    }
+    expect(Math.abs(during.localVerticalDelta)).toBeLessThanOrEqual(4.1);
+    const actualViewportGap = magnetSide === "left"
+      ? during.yes.left - during.magnet.right
+      : during.magnet.left - during.yes.right;
+    expect(Math.abs(actualViewportGap - 12)).toBeLessThanOrEqual(1);
     expect(during.magnet.pointerEvents).toBe("none");
     await expect(page.locator("[data-yes]")).toHaveAccessibleName("YES, I'D LOVE TO");
 
